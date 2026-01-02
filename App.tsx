@@ -148,6 +148,16 @@ function App() {
       setIsConfiguringSong(false);
   };
 
+  // Difficulty Selection Logic
+  const handleDifficultySelect = (diff: BeatmapDifficulty) => {
+      setSelectedDifficulty(diff);
+      if (diff === BeatmapDifficulty.Titan) {
+          // Force 6K and Multi style for Titan
+          setSelectedLaneCount(6);
+          setSelectedPlayStyle('MULTI');
+      }
+  };
+
   const handleCreateBeatmap = async (difficulty: BeatmapDifficulty) => {
     if (!pendingFile) return;
     
@@ -211,7 +221,7 @@ function App() {
           structure: structure as any,
           theme: aiTheme,
           difficultyRating: rating,
-          laneCount: laneCount
+          laneCount: difficulty === BeatmapDifficulty.Titan ? 6 : laneCount
       };
 
       await saveSong(newSong);
@@ -236,24 +246,42 @@ function App() {
   };
 
   const handleImportMap = async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+      
+      // Store file list and clear input
+      const fileList: File[] = Array.from(files);
       event.target.value = '';
 
-      setLoadingStage("正在解析谱面包 (.nfz)...");
       setStatus(GameStatus.Analyzing);
       setErrorMessage(null);
       
-      try {
-          const song = await parseSongImport(file);
-          setLoadingStage("正在保存...");
-          await saveSong(song);
-          await loadLibrary();
-          setStatus(GameStatus.Library);
-      } catch (e: any) {
-          console.error("Import failed", e);
-          setStatus(GameStatus.Library);
-          alert(`导入失败: ${e.message || "未知错误"}`);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < fileList.length; i++) {
+          const file = fileList[i];
+          setLoadingStage(`正在导入 (${i + 1}/${fileList.length}): ${file.name}...`);
+          
+          try {
+              const song = await parseSongImport(file);
+              await saveSong(song);
+              successCount++;
+          } catch (e: any) {
+              console.error(`Import failed for ${file.name}`, e);
+              failCount++;
+          }
+      }
+
+      await loadLibrary();
+      setStatus(GameStatus.Library);
+      setLoadingStage("");
+
+      // Optional: Show summary via temporary UI or just log (Keeping it simple per requirements)
+      if (failCount > 0) {
+          // If we had a notification system, we'd use it here. 
+          // For now, logging to console and maybe setting a non-blocking error message
+          console.warn(`Batch import complete. Success: ${successCount}, Failed: ${failCount}`);
       }
   };
 
@@ -387,7 +415,16 @@ function App() {
                             <div>
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-2">按键模式</h3>
                                 <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => setSelectedLaneCount(4)} className={`p-3 rounded-xl text-left font-bold transition-all border ${selectedLaneCount === 4 ? 'bg-neon-blue border-neon-blue text-black' : 'bg-transparent border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                                    <button 
+                                        onClick={() => setSelectedLaneCount(4)} 
+                                        disabled={selectedDifficulty === BeatmapDifficulty.Titan}
+                                        className={`p-3 rounded-xl text-left font-bold transition-all border 
+                                            ${selectedLaneCount === 4 
+                                                ? 'bg-neon-blue border-neon-blue text-black' 
+                                                : selectedDifficulty === BeatmapDifficulty.Titan
+                                                    ? 'bg-transparent border-white/5 text-gray-600 cursor-not-allowed opacity-50'
+                                                    : 'bg-transparent border-white/10 text-gray-400 hover:bg-white/5'}`}
+                                    >
                                         4 Keys
                                     </button>
                                     <button onClick={() => setSelectedLaneCount(6)} className={`p-3 rounded-xl text-left font-bold transition-all border ${selectedLaneCount === 6 ? 'bg-neon-blue border-neon-blue text-black' : 'bg-transparent border-white/10 text-gray-400 hover:bg-white/5'}`}>
@@ -399,7 +436,16 @@ function App() {
                             <div>
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-2">游玩风格</h3>
                                 <div className="grid grid-cols-2 gap-2">
-                                    <button onClick={() => setSelectedPlayStyle('THUMB')} className={`p-3 rounded-xl text-left font-bold transition-all border ${selectedPlayStyle === 'THUMB' ? 'bg-white border-white text-black' : 'bg-transparent border-white/10 text-gray-400 hover:bg-white/5'}`}>
+                                    <button 
+                                        onClick={() => setSelectedPlayStyle('THUMB')} 
+                                        disabled={selectedDifficulty === BeatmapDifficulty.Titan}
+                                        className={`p-3 rounded-xl text-left font-bold transition-all border 
+                                            ${selectedPlayStyle === 'THUMB' 
+                                                ? 'bg-white border-white text-black' 
+                                                : selectedDifficulty === BeatmapDifficulty.Titan
+                                                    ? 'bg-transparent border-white/5 text-gray-600 cursor-not-allowed opacity-50'
+                                                    : 'bg-transparent border-white/10 text-gray-400 hover:bg-white/5'}`}
+                                    >
                                         双指/拇指
                                     </button>
                                     <button onClick={() => setSelectedPlayStyle('MULTI')} className={`p-3 rounded-xl text-left font-bold transition-all border ${selectedPlayStyle === 'MULTI' ? 'bg-white border-white text-black' : 'bg-transparent border-white/10 text-gray-400 hover:bg-white/5'}`}>
@@ -418,10 +464,11 @@ function App() {
                             { id: BeatmapDifficulty.Normal, label: 'Normal', desc: 'Standard', color: 'bg-blue-500' },
                             { id: BeatmapDifficulty.Hard, label: 'Hard', desc: 'Intense', color: 'bg-orange-500' },
                             { id: BeatmapDifficulty.Expert, label: 'Expert', desc: 'Extreme', color: 'bg-red-600' },
+                            { id: BeatmapDifficulty.Titan, label: 'TITAN', desc: '6K Only / Chaos', color: 'bg-purple-600' },
                          ].map((mode) => (
                              <button
                                 key={mode.id}
-                                onClick={() => setSelectedDifficulty(mode.id as BeatmapDifficulty)}
+                                onClick={() => handleDifficultySelect(mode.id as BeatmapDifficulty)}
                                 className={`relative overflow-hidden rounded-xl p-4 text-left transition-all border group ${selectedDifficulty === mode.id ? 'bg-white/10 border-neon-blue' : 'border-white/10 hover:bg-white/5 hover:border-white/20'}`}
                              >
                                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${mode.color}`}></div>

@@ -28,6 +28,13 @@ const DIFFICULTY_CONFIG = {
         streamChance: 0.5,
         holdChance: 0.3,
         jumpChance: 0.35
+    },
+    [BeatmapDifficulty.Titan]: {
+        thresholdMultiplier: 0.6, // Very sensitive, picks up ghost notes
+        minGap: 0.05, // Almost 1/32 stream speed support
+        streamChance: 0.8,
+        holdChance: 0.2, // Less holds, more tapping
+        jumpChance: 0.7 // Frequent chords
     }
 };
 
@@ -67,26 +74,24 @@ const getNextLanes = (
             }
         }
     } 
-    // 2. 双押逻辑
-    else if (count >= 2) {
-        // 尽量对称或分布在两边
-        // 4K: (0,3), (1,2), (0,2), (1,3)
-        let pairs = [];
-        if (laneCount === 4) {
-            pairs = [[0,3], [1,2], [0,2], [1,3], [0,1], [2,3]];
-        } else {
-            pairs = [[0,5], [1,4], [2,3], [0,2], [3,5]];
+    // 2. 双押或多押逻辑
+    else {
+        // 如果是多押 (3+)，尽量分散
+        const needed = count;
+        
+        // 简单的随机填充逻辑，但避免完全重复上一组
+        const candidates = allLanes.filter(l => !lastLanes.includes(l));
+        
+        // 如果候选不够（例如需要3个，但上次用了4个），就重置为全部
+        const pool = candidates.length >= needed ? candidates : allLanes;
+        
+        // Shuffle pool
+        for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
         }
         
-        const randomPair = pairs[Math.floor(Math.random() * pairs.length)];
-        lanes.push(...randomPair);
-        
-        // 如果需要更多键 (3或4)
-        while(lanes.length < count) {
-            const remaining = allLanes.filter(l => !lanes.includes(l));
-            if(remaining.length === 0) break;
-            lanes.push(remaining[Math.floor(Math.random() * remaining.length)]);
-        }
+        lanes.push(...pool.slice(0, needed));
     }
     
     return lanes.sort((a,b) => a-b);
@@ -102,22 +107,26 @@ export const generateBeatmap = (
 ): Note[] => {
     let notes: Note[] = [];
     
+    // Force 6K for Titan
+    const effectiveLaneCount = difficulty === BeatmapDifficulty.Titan ? 6 : laneCount;
+    const effectivePlayStyle = difficulty === BeatmapDifficulty.Titan ? 'MULTI' : playStyle;
+
     // 1. 按时间排序 (不进行量子化，保持 DSP 原始精度)
     let sortedOnsets = onsets.sort((a, b) => a.time - b.time);
     const config = DIFFICULTY_CONFIG[difficulty];
 
     // 生成逻辑
-    notes = runGenerationPass(sortedOnsets, structure, config, laneCount, playStyle);
+    notes = runGenerationPass(sortedOnsets, structure, config, effectiveLaneCount, effectivePlayStyle, difficulty);
 
     // 保底机制
     if (notes.length < 30 && difficulty !== BeatmapDifficulty.Easy) {
         console.warn("Notes too sparse, retrying with lower threshold...");
         const retryConfig = { ...config, thresholdMultiplier: config.thresholdMultiplier * 0.7 };
-        notes = runGenerationPass(sortedOnsets, structure, retryConfig, laneCount, playStyle);
+        notes = runGenerationPass(sortedOnsets, structure, retryConfig, effectiveLaneCount, effectivePlayStyle, difficulty);
     }
     
     if (notes.length === 0 && sortedOnsets.length > 0) {
-        return generateRawFallback(sortedOnsets, laneCount);
+        return generateRawFallback(sortedOnsets, effectiveLaneCount);
     }
 
     return notes;
@@ -128,7 +137,8 @@ const runGenerationPass = (
     structure: SongStructure, 
     config: any,
     laneCount: LaneCount,
-    playStyle: PlayStyle
+    playStyle: PlayStyle,
+    difficulty: BeatmapDifficulty
 ): Note[] => {
     const notes: Note[] = [];
     let lastLanes: number[] = [Math.floor(laneCount / 2)];
@@ -148,29 +158,47 @@ const runGenerationPass = (
 
         // Determine number of simultaneous notes
         let simNotes = 1;
+        const isTitan = difficulty === BeatmapDifficulty.Titan;
+
         const allowJump = (currentSection.style === 'jump' || Math.random() < config.jumpChance) && currentSection.intensity > 0.6;
         
         if (allowJump && onset.energy > 0.75) {
             simNotes = 2;
-            if (playStyle === 'MULTI' && laneCount === 6 && onset.energy > 0.9 && config.jumpChance > 0.3) {
-                simNotes = 3;
+            
+            // Titan / Expert logic for Triples/Quads
+            if ((isTitan || (playStyle === 'MULTI' && laneCount === 6)) && onset.energy > 0.9) {
+                 if (isTitan && Math.random() > 0.4) {
+                     simNotes = 3; // Triples common in Titan
+                     if (onset.energy > 0.98) simNotes = 4; // Quads on peaks
+                 } else if (config.jumpChance > 0.3) {
+                     simNotes = 3;
+                 }
             }
         }
         
-        if (playStyle === 'THUMB') {
+        if (playStyle === 'THUMB' && !isTitan) {
             simNotes = Math.min(simNotes, 2);
         }
 
         // Generate Lanes with Logic
         const lanes = getNextLanes(simNotes, lastLanes, laneCount, currentSection.style as any);
 
-        // Hold Logic
+        // Hold Logic (Reduced for Titan to maintain stream flow, but allowed)
         let isHold = false;
         let duration = 0;
         if (currentSection.style === 'hold' && Math.random() < config.holdChance && simNotes === 1) {
             isHold = true;
             const maxHold = config.minGap > 0.2 ? 0.5 : 1.0;
             duration = Math.min(maxHold, Math.max(0.1, 60 / structure.bpm)); 
+        }
+
+        // Catch Note Logic
+        let isCatch = false;
+        if (!isHold && simNotes === 1) {
+            const catchChance = currentSection.style === 'stream' ? 0.2 : 0.05;
+            if (Math.random() < catchChance) {
+                isCatch = true;
+            }
         }
 
         lanes.forEach(lane => {
@@ -181,7 +209,8 @@ const runGenerationPass = (
                 hit: false,
                 visible: true,
                 duration: isHold ? duration : 0,
-                isHolding: false
+                isHolding: false,
+                type: isCatch ? 'CATCH' : 'NORMAL'
             });
         });
 
@@ -202,24 +231,29 @@ const generateRawFallback = (onsets: Onset[], laneCount: number): Note[] => {
             hit: false,
             visible: true,
             duration: 0,
-            isHolding: false
+            isHolding: false,
+            type: 'NORMAL'
         }));
 };
 
 /**
- * 计算谱面的加权难度系数 (用于 UI 显示 1-10 级)
+ * 计算谱面的加权难度系数 (用于 UI 显示 1-15+ 级)
+ * 重新平衡算法：防止高密度下的数值膨胀
  */
 export const calculateDifficultyRating = (notes: Note[], duration: number): number => {
     if (notes.length === 0 || duration === 0) return 0;
 
+    // 1. Average NPS
     const avgNps = notes.length / duration;
 
+    // 2. Peak Density (Notes in 1s window)
     let maxWindowNotes = 0;
     const sortedNotes = notes.sort((a, b) => a.time - b.time);
     
     if (sortedNotes.length > 0) {
         let left = 0;
         for (let right = 0; right < sortedNotes.length; right++) {
+            // Sliding window of 1.0 second
             while (sortedNotes[right].time - sortedNotes[left].time > 1.0) {
                 left++;
             }
@@ -229,11 +263,33 @@ export const calculateDifficultyRating = (notes: Note[], duration: number): numb
             }
         }
     }
-
     const peakNps = maxWindowNotes; 
+
+    // --- REBALANCED FORMULA (FINAL) ---
+    // Reduce weight of PeakNPS significantly to prevent bursts from exploding the score.
+    // Use strong logarithmic compression for anything above 10.
     
-    // Linear / Exponential curve fit for levels 1-10
-    const score = (Math.pow(avgNps, 1.2) * 0.4) + (Math.pow(peakNps, 1.1) * 0.15);
+    const weightedAvg = avgNps * 0.5; // Slightly reduced from 0.65
+    const weightedPeak = peakNps * 0.05; // Heavily reduced from 0.15
+
+    let rawScore = weightedAvg + weightedPeak;
     
-    return score;
+    // Apply compression
+    if (rawScore > 10) {
+        // Logarithmic compression:
+        // Input 11 -> ~11
+        // Input 15 -> ~13
+        // Input 25 -> ~15
+        // Input 50 -> ~17
+        const surplus = rawScore - 10;
+        
+        // Base 10 + 2.5 * log2(surplus + 1)
+        // log2(2) = 1 -> 12.5
+        // log2(5) = 2.3 -> 15.75
+        // log2(17) = 4 -> 20
+        rawScore = 10 + (Math.log2(surplus + 1) * 2.5);
+    }
+    
+    // Hard cap just in case to prevent UI breakage, though formula should handle it
+    return Math.max(1, Math.min(25, rawScore));
 };

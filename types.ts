@@ -11,11 +11,13 @@ export enum BeatmapDifficulty {
   Easy = 'EASY',
   Normal = 'NORMAL',
   Hard = 'HARD',
-  Expert = 'EXPERT'
+  Expert = 'EXPERT',
+  Titan = 'TITAN'
 }
 
 export type LaneCount = 4 | 6;
 export type PlayStyle = 'THUMB' | 'MULTI'; // Thumb = Max 2 simultaneous, Multi = Unlimited
+export type NoteType = 'NORMAL' | 'CATCH';
 
 export interface Note {
   time: number; // Time in seconds
@@ -25,6 +27,7 @@ export interface Note {
   visible: boolean;
   duration: number; // 持续时间，0 表示单点，>0 表示长条
   isHolding: boolean; // 是否正在被按住
+  type: NoteType; // 新增：音符类型
 }
 
 // DSP 层输出：原始节奏点

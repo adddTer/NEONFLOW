@@ -50,17 +50,31 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   const audioInputRef = useRef<HTMLInputElement>(null);
   const mapInputRef = useRef<HTMLInputElement>(null);
 
-  const getLevel = (rating: number) => {
-      if (rating < 1.0) return 1;
-      if (rating < 2.0) return 2;
-      if (rating < 3.0) return 3;
-      if (rating < 4.0) return 4;
-      if (rating < 5.0) return 5;
-      if (rating < 6.0) return 6;
-      if (rating < 7.0) return 7;
-      if (rating < 8.5) return 8;
-      if (rating < 10.0) return 9;
-      return 10;
+  const getLevelDisplay = (rating: number) => {
+      // Basic scaling for display
+      if (rating < 1.0) return { val: 1, color: '#00f3ff' }; // Cyan
+      
+      const ranges = [
+          { max: 2.0, level: 2, color: '#00f3ff' },
+          { max: 3.0, level: 3, color: '#00f3ff' },
+          { max: 4.0, level: 4, color: '#00fa9a' }, // Spring Green
+          { max: 5.0, level: 5, color: '#00fa9a' },
+          { max: 6.0, level: 6, color: '#ffd700' }, // Gold
+          { max: 7.0, level: 7, color: '#ffd700' },
+          { max: 8.5, level: 8, color: '#ff8c00' }, // Dark Orange
+          { max: 10.0, level: 9, color: '#ff4500' }, // Orange Red
+          { max: 11.5, level: 10, color: '#ff0055' } // Red
+      ];
+
+      for (const r of ranges) {
+          if (rating < r.max) return { val: r.level, color: r.color };
+      }
+
+      // Titan Levels (11+)
+      const val = Math.floor(rating);
+      // Purple for 11-13, Deep Purple/Black for 14+
+      const color = val >= 14 ? '#bd00ff' : '#d946ef'; 
+      return { val, color, isTitan: true };
   };
 
   const toggleSelection = (id: string) => {
@@ -370,7 +384,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                     </button>
 
                     <input ref={audioInputRef} type="file" accept="audio/*" onChange={onImportAudioClick} className="hidden" />
-                    <input ref={mapInputRef} type="file" accept=".json,.zip,.nfz" onChange={onImportMapClick} className="hidden" />
+                    <input ref={mapInputRef} type="file" multiple accept=".json,.zip,.nfz" onChange={onImportMapClick} className="hidden" />
                  </>
              )}
          </div>
@@ -388,9 +402,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               </p>
           </div>
       ) : (
-          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 pb-20">
+          <div className="flex-1 overflow-y-auto px-4 custom-scrollbar space-y-3 pb-20">
               {songs.map(song => {
-                  const level = getLevel(song.difficultyRating);
+                  const levelInfo = getLevelDisplay(song.difficultyRating);
                   const primaryColor = song.theme?.primaryColor || '#00f3ff';
                   const secondaryColor = song.theme?.secondaryColor || '#222';
                   
@@ -420,14 +434,14 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                       {/* Level Badge */}
                       <div className="px-6 py-4 flex flex-col items-center justify-center border-r border-white/5 w-24 shrink-0 h-full min-h-[5.5rem] relative">
                            <div 
-                                className={`w-12 h-12 rounded-lg border-2 flex flex-col items-center justify-center transition-all bg-black/40 shadow-lg`}
+                                className={`w-12 h-12 rounded-lg border-2 flex flex-col items-center justify-center transition-all bg-black/40 shadow-lg ${levelInfo.isTitan ? 'shadow-purple-500/30' : ''}`}
                                 style={{
-                                    borderColor: primaryColor,
-                                    color: primaryColor,
-                                    boxShadow: `0 0 10px ${primaryColor}22`
+                                    borderColor: levelInfo.color,
+                                    color: levelInfo.color,
+                                    boxShadow: `0 0 10px ${levelInfo.color}22`
                                 }}
                            >
-                               <span className="text-2xl font-black italic leading-none">{level}</span>
+                               <span className="text-2xl font-black italic leading-none">{levelInfo.val}</span>
                                <span className="text-[8px] font-normal not-italic opacity-80 font-sans leading-none mt-0.5">LV</span>
                            </div>
 

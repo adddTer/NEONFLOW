@@ -39,6 +39,12 @@ export const getAllSongs = async (): Promise<SavedSong[]> => {
     const request = store.getAll();
     request.onsuccess = () => {
         const songs = request.result as SavedSong[];
+        // Backwards compatibility for songs created before 'type' field existed
+        songs.forEach(song => {
+             song.notes.forEach(note => {
+                 if (!note.type) note.type = 'NORMAL';
+             });
+        });
         songs.sort((a, b) => b.createdAt - a.createdAt);
         resolve(songs);
     };
@@ -143,6 +149,13 @@ export const parseSongImport = async (file: File): Promise<SavedSong> => {
         if (!metaData._isNeonFlowExport) {
             throw new Error("缺少谱面签名");
         }
+        
+        // Ensure type exists
+        if (metaData.notes) {
+            metaData.notes.forEach((n: any) => {
+                if (!n.type) n.type = 'NORMAL';
+            });
+        }
 
         const audioArrayBuffer = await audioFile.async("arraybuffer");
 
@@ -184,6 +197,14 @@ const parseLegacyJsonImport = (file: File): Promise<SavedSong> => {
                 };
 
                 const audioBuffer = base64ToArrayBuffer(json.audioData);
+                
+                // Compatibility check for 'type'
+                if (json.notes) {
+                    json.notes.forEach((n: any) => {
+                        if (!n.type) n.type = 'NORMAL';
+                    });
+                }
+
                 const song: SavedSong = {
                     ...json,
                     id: crypto.randomUUID(),

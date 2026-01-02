@@ -22,6 +22,7 @@ const LABELS_6 = ['S', 'D', 'F', 'J', 'K', 'L'];
 const BASE_TARGET_WIDTH = 90; // Target width per lane on desktop
 const HIT_WINDOW_PERFECT = 0.050; // 50ms
 const HIT_WINDOW_GOOD = 0.120; // 120ms
+const HIT_WINDOW_CATCH = 0.100; // Catch notes have a slightly easier window, essentially "Good" range
 const SCROLL_SPEED = 700; 
 const SCORE_BASE_PERFECT = 1000;
 const SCORE_BASE_GOOD = 500;
@@ -208,6 +209,38 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   };
 
+  const triggerHitVisuals = (lane: number, type: 'PERFECT' | 'GOOD') => {
+      const isPerfect = type === 'PERFECT';
+      playHitSound(type);
+
+      laneHitStateRef.current[lane] = 1.0; 
+      comboScaleRef.current = 1.5;
+
+      const canvas = canvasRef.current;
+      if (canvas) {
+          const count = laneCountRef.current;
+          const laneW = laneWidthRef.current;
+          const totalWidth = laneW * count;
+          const startX = (canvas.width - totalWidth) / 2;
+          const laneX = startX + lane * laneW + laneW / 2;
+          const hitY = canvas.height * 0.85;
+          
+          const hitColor = isPerfect ? theme.perfectColor : theme.goodColor;
+          spawnParticles(laneX, hitY, hitColor, isPerfect ? 20 : 10);
+      }
+
+      // Effect Text
+      const hitColor = isPerfect ? theme.perfectColor : theme.goodColor;
+      effectRef.current.push({
+        id: Math.random(),
+        text: type,
+        time: performance.now(),
+        lane: lane,
+        color: hitColor,
+        scale: 1.5
+      });
+  };
+
   const processHit = (lane: number) => {
     const ctx = audioContextRef.current;
     if (!ctx) return;
@@ -218,6 +251,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const hitNote = notesRef.current.find(n => 
       !n.hit && 
       n.lane === lane && 
+      n.type === 'NORMAL' && // Only process Normal notes on direct Hit
       Math.abs(gameTime - n.time) < HIT_WINDOW_GOOD
     );
 
@@ -235,24 +269,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         scoreRef.current.good++;
       }
 
-      playHitSound(type);
-
-      // Trigger Visuals
-      laneHitStateRef.current[lane] = 1.0; 
-      comboScaleRef.current = 1.5;
-
-      const canvas = canvasRef.current;
-      if (canvas) {
-          const count = laneCountRef.current;
-          const laneW = laneWidthRef.current;
-          const totalWidth = laneW * count;
-          const startX = (canvas.width - totalWidth) / 2;
-          const laneX = startX + lane * laneW + laneW / 2;
-          const hitY = canvas.height * 0.85;
-          
-          const hitColor = isPerfect ? theme.perfectColor : theme.goodColor;
-          spawnParticles(laneX, hitY, hitColor, isPerfect ? 20 : 10);
-      }
+      triggerHitVisuals(lane, type);
 
       hitNote.hit = true;
       if (hitNote.duration > 0) {
@@ -267,17 +284,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       scoreRef.current.score += baseScore * (1 + Math.min(scoreRef.current.combo, 100) / 50);
-
-      // Effect Text
-      const hitColor = isPerfect ? theme.perfectColor : theme.goodColor;
-      effectRef.current.push({
-        id: Math.random(),
-        text: type,
-        time: performance.now(),
-        lane: lane,
-        color: hitColor,
-        scale: 1.5
-      });
     }
     
     onScoreUpdate({...scoreRef.current});
@@ -396,9 +402,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ctx.lineTo(startX + count * laneW, canvas.height);
     ctx.stroke();
 
-    // --- Draw Notes ---
+    // --- Draw & Process Notes ---
     notesRef.current.forEach(note => {
         if (!note.visible) return;
+
+        // CATCH Logic: Check overlap with judgment line AND key state
+        if (note.type === 'CATCH' && !note.hit) {
+             const timeDiff = Math.abs(gameTime - note.time);
+             // If overlapping and key is down
+             if (timeDiff <= HIT_WINDOW_CATCH && keyStateRef.current[note.lane]) {
+                 // Auto Hit!
+                 note.hit = true;
+                 note.visible = false;
+                 scoreRef.current.perfect++;
+                 scoreRef.current.combo++;
+                 if (scoreRef.current.combo > scoreRef.current.maxCombo) {
+                     scoreRef.current.maxCombo = scoreRef.current.combo;
+                 }
+                 scoreRef.current.score += SCORE_BASE_PERFECT * (1 + Math.min(scoreRef.current.combo, 100) / 50);
+                 
+                 triggerHitVisuals(note.lane, 'PERFECT');
+                 onScoreUpdate({...scoreRef.current});
+             }
+        }
 
         // MISS Logic
         const noteMissTime = note.time + HIT_WINDOW_GOOD;
@@ -443,6 +469,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const noteX = startX + note.lane * laneW + pad;
         
         if (headY > -200 || (headY - note.duration * SCROLL_SPEED) < canvas.height) {
+            // Draw Hold Body
             if (note.duration > 0) {
                 const bodyHeight = note.duration * SCROLL_SPEED;
                 let drawHeadY = headY;
@@ -458,13 +485,49 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             }
 
             if (!note.isHolding || note.duration === 0) {
-                 ctx.shadowBlur = 15;
-                 ctx.shadowColor = theme.secondaryColor;
-                 ctx.fillStyle = theme.secondaryColor;
-                 ctx.fillRect(noteX, headY - 14, noteW, 28);
-                 ctx.shadowBlur = 0;
-                 ctx.fillStyle = 'rgba(255,255,255,0.9)';
-                 ctx.fillRect(noteX, headY - 8, noteW, 8);
+                if (note.type === 'CATCH') {
+                     // Draw Diamond for Catch Note (Flattened)
+                     ctx.shadowBlur = 20;
+                     ctx.shadowColor = theme.goodColor;
+                     ctx.fillStyle = '#000000'; // Hollow center
+                     ctx.strokeStyle = theme.goodColor;
+                     ctx.lineWidth = 4;
+                     
+                     const cx = noteX + noteW / 2;
+                     const cy = headY;
+                     const sizeX = noteW / 2;
+                     const sizeY = noteW / 4; // Flattened height
+                     
+                     ctx.beginPath();
+                     ctx.moveTo(cx, cy - sizeY); // Top
+                     ctx.lineTo(cx + sizeX, cy); // Right
+                     ctx.lineTo(cx, cy + sizeY); // Bottom
+                     ctx.lineTo(cx - sizeX, cy); // Left
+                     ctx.closePath();
+                     ctx.fill();
+                     ctx.stroke();
+
+                     // Inner small diamond
+                     ctx.fillStyle = theme.goodColor;
+                     ctx.beginPath();
+                     ctx.moveTo(cx, cy - sizeY/3);
+                     ctx.lineTo(cx + sizeX/3, cy);
+                     ctx.lineTo(cx, cy + sizeY/3);
+                     ctx.lineTo(cx - sizeX/3, cy);
+                     ctx.closePath();
+                     ctx.fill();
+
+                     ctx.shadowBlur = 0;
+                } else {
+                    // Draw Normal Rectangle
+                     ctx.shadowBlur = 15;
+                     ctx.shadowColor = theme.secondaryColor;
+                     ctx.fillStyle = theme.secondaryColor;
+                     ctx.fillRect(noteX, headY - 14, noteW, 28);
+                     ctx.shadowBlur = 0;
+                     ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                     ctx.fillRect(noteX, headY - 8, noteW, 8);
+                }
             } 
         }
     });
