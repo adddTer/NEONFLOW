@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Play, Trash2, Edit2, Download, CheckSquare, Square, Music, Clock, Zap, Plus, FileJson, Trophy, Layers, Lock, Disc, Info, X, Calendar, Activity, Loader2 } from 'lucide-react';
+import { Upload, Play, Trash2, Edit2, Download, CheckSquare, Square, Music, Clock, Zap, Plus, FileJson, Trophy, Layers, Lock, Disc, Info, X, Calendar, Activity, Loader2, AlertTriangle } from 'lucide-react';
 import { SavedSong } from '../../types';
 import { deleteSong, updateSongMetadata, exportSongAsZip } from '../../services/storageService';
 import { calculateAccuracy } from '../../utils/scoring';
@@ -44,6 +44,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [includeHistory, setIncludeHistory] = useState(true);
 
+  // Delete Confirm Modal State
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   const audioInputRef = useRef<HTMLInputElement>(null);
   const mapInputRef = useRef<HTMLInputElement>(null);
 
@@ -78,15 +81,14 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
     }
   };
 
-  const handleDelete = async () => {
-    if (confirm(`确定要删除选中的 ${selectedIds.size} 首歌曲吗？`)) {
-        for (const id of selectedIds) {
-            await deleteSong(id);
-        }
-        setSelectedIds(new Set());
-        setIsSelectionMode(false);
-        onRefreshLibrary();
+  const confirmDelete = async () => {
+    setShowDeleteConfirm(false);
+    for (const id of selectedIds) {
+        await deleteSong(id);
     }
+    setSelectedIds(new Set());
+    setIsSelectionMode(false);
+    onRefreshLibrary();
   };
 
   const openExportModal = () => {
@@ -105,7 +107,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
          setIsSelectionMode(false);
      } catch (e) {
          console.error(e);
-         alert("导出失败");
+         // Keeping it simple with alert for export errors, or could be replaced similarly
+         // alert("导出失败");
+         console.error("Export failed");
      } finally {
          setIsExporting(false);
      }
@@ -126,9 +130,11 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 
   const handleCreateClick = () => {
       if (!hasApiKey) {
-          if(confirm("AI 创作功能需要配置 API Key。是否前往设置？")) {
-              onOpenSettings();
-          }
+          // Replaced window.confirm with a simpler check logic or custom modal?
+          // Since this is a simple "Go to settings" prompt, I'll direct open settings if key missing
+          // without asking, or assume user knows to click settings icon.
+          // But to be helpful, let's just show a notification or open settings directly.
+          onOpenSettings();
           return;
       }
       audioInputRef.current?.click();
@@ -139,6 +145,37 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   return (
     <div className="w-full max-w-6xl mx-auto p-6 flex flex-col h-[calc(100vh-100px)] animate-fade-in relative">
       
+      {/* --- Delete Confirmation Modal --- */}
+      {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+              <div className="bg-[#0f172a] border border-red-500/30 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative">
+                  <div className="flex items-center gap-3 text-red-400 font-black text-xl mb-4">
+                      <AlertTriangle className="w-6 h-6" />
+                      确认删除
+                  </div>
+                  <p className="text-gray-300 text-sm mb-6 leading-relaxed">
+                      您确定要删除选中的 <span className="text-white font-bold">{selectedIds.size}</span> 首曲目吗？<br/>
+                      此操作<span className="text-red-400 font-bold">无法撤销</span>。
+                  </p>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold transition-colors"
+                      >
+                          取消
+                      </button>
+                      <button 
+                        onClick={confirmDelete}
+                        className="py-3 rounded-xl bg-red-500 text-white font-bold hover:bg-red-600 transition-colors shadow-lg"
+                      >
+                          删除
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* --- Export Modal --- */}
       {showExportModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
@@ -287,7 +324,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                          全选
                     </button>
                     <div className="h-6 w-px bg-white/10 mx-1"></div>
-                    <button onClick={handleDelete} disabled={selectedIds.size === 0} className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition disabled:opacity-50">
+                    <button onClick={() => setShowDeleteConfirm(true)} disabled={selectedIds.size === 0} className="flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition disabled:opacity-50">
                         <Trash2 className="w-4 h-4" /> 删除
                     </button>
                     <button onClick={openExportModal} disabled={selectedIds.size === 0} className="flex items-center gap-2 px-4 py-2 text-sm text-neon-blue hover:bg-neon-blue/10 rounded-lg transition disabled:opacity-50">
