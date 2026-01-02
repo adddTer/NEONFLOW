@@ -159,6 +159,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       effectRef.current = [];
       particlesRef.current = [];
       comboScaleRef.current = 1.0;
+      keyStateRef.current = new Array(laneCountRef.current).fill(false); // Reset keys to prevent ghost inputs
       
       playMusic();
       requestRef.current = requestAnimationFrame(gameLoop);
@@ -310,6 +311,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         canvas.height = container.clientHeight;
     }
 
+    // Detect Mobile width
+    const isMobile = canvas.width < 768;
+
     // Dynamic Lane Width Calculation
     const count = laneCountRef.current;
     const maxPossibleWidth = (canvas.width - 20) / count;
@@ -387,12 +391,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.fillRect(receptorX, hitLineY, receptorW, 12);
         ctx.shadowBlur = 0;
         
-        // Label
-        const labelY = hitLineY + 40;
-        ctx.fillStyle = isPressed ? '#ffffff' : 'rgba(255,255,255,0.4)';
-        ctx.font = `bold 24px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillText(labelsRef.current[i], x + laneW / 2, labelY);
+        // Label (Hiden on Mobile to prevent clutter)
+        if (!isMobile) {
+            const labelY = hitLineY + 40;
+            ctx.fillStyle = isPressed ? '#ffffff' : 'rgba(255,255,255,0.4)';
+            ctx.font = `bold 24px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(labelsRef.current[i], x + laneW / 2, labelY);
+        }
     }
     
     // Right Border
@@ -496,7 +502,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                      const cx = noteX + noteW / 2;
                      const cy = headY;
                      const sizeX = noteW / 2;
-                     const sizeY = noteW / 8; // Flattened height (previously /4)
+                     const sizeY = noteW / 8; // Flattened height
                      
                      ctx.beginPath();
                      ctx.moveTo(cx, cy - sizeY); // Top
@@ -598,14 +604,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     <div className="relative w-full h-full flex justify-center overflow-hidden">
       <canvas ref={canvasRef} className="block w-full h-full" />
       
-      {/* Mobile Controls Overlay - Taller and better feedback */}
+      {/* Mobile Controls Overlay - Optimized */}
       <div className="absolute bottom-0 left-0 right-0 h-40 flex justify-center gap-1 md:hidden pointer-events-none px-2 pb-2">
         {keysRef.current.map((k, i) => (
             <div key={k} className="flex-1 bg-gradient-to-t from-white/20 to-transparent border-x border-white/10 rounded-b-lg flex items-end justify-center pb-4 pointer-events-auto active:bg-white/30 active:from-white/30 touch-none backdrop-blur-[2px] transition-colors"
                 onTouchStart={(e) => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keydown', { key: k })); }}
                 onTouchEnd={(e) => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: k })); }}
+                onTouchCancel={(e) => { e.preventDefault(); window.dispatchEvent(new KeyboardEvent('keyup', { key: k })); }}
             >
-                <span className="text-white/50 font-bold text-xl">{labelsRef.current[i]}</span>
+                {/* No Text Labels on Mobile Buttons */}
             </div>
         ))}
       </div>

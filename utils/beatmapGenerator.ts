@@ -9,8 +9,8 @@ const DIFFICULTY_CONFIG = {
         jumpChance: 0.0
     },
     [BeatmapDifficulty.Normal]: {
-        thresholdMultiplier: 1.4,
-        minGap: 0.25,
+        thresholdMultiplier: 1.25, // Slightly denser to hit Lv 5-6
+        minGap: 0.22,
         streamChance: 0.0,
         holdChance: 0.15,
         jumpChance: 0.0
@@ -30,11 +30,11 @@ const DIFFICULTY_CONFIG = {
         jumpChance: 0.35
     },
     [BeatmapDifficulty.Titan]: {
-        thresholdMultiplier: 0.6, // Very sensitive, picks up ghost notes
-        minGap: 0.05, // Almost 1/32 stream speed support
-        streamChance: 0.8,
-        holdChance: 0.2, // Less holds, more tapping
-        jumpChance: 0.7 // Frequent chords
+        thresholdMultiplier: 0.75, 
+        minGap: 0.11, // Increased from 0.09 to 0.11 (Max ~9 NPS stream) to reduce clutter
+        streamChance: 0.6,
+        holdChance: 0.2, 
+        jumpChance: 0.45 // Slightly reduced chords
     }
 };
 
@@ -166,11 +166,13 @@ const runGenerationPass = (
             simNotes = 2;
             
             // Titan / Expert logic for Triples/Quads
-            if ((isTitan || (playStyle === 'MULTI' && laneCount === 6)) && onset.energy > 0.9) {
-                 if (isTitan && Math.random() > 0.4) {
-                     simNotes = 3; // Triples common in Titan
-                     if (onset.energy > 0.98) simNotes = 4; // Quads on peaks
-                 } else if (config.jumpChance > 0.3) {
+            if ((isTitan || (playStyle === 'MULTI' && laneCount === 6)) && onset.energy > 0.92) {
+                 // Nerfed chance for Triples/Quads
+                 if (isTitan && Math.random() > 0.65) {
+                     simNotes = 3; 
+                     // Rare Quads
+                     if (onset.energy > 0.99) simNotes = 4; 
+                 } else if (config.jumpChance > 0.35) {
                      simNotes = 3;
                  }
             }
@@ -183,7 +185,7 @@ const runGenerationPass = (
         // Generate Lanes with Logic
         const lanes = getNextLanes(simNotes, lastLanes, laneCount, currentSection.style as any);
 
-        // Hold Logic (Reduced for Titan to maintain stream flow, but allowed)
+        // Hold Logic
         let isHold = false;
         let duration = 0;
         if (currentSection.style === 'hold' && Math.random() < config.holdChance && simNotes === 1) {
@@ -265,31 +267,20 @@ export const calculateDifficultyRating = (notes: Note[], duration: number): numb
     }
     const peakNps = maxWindowNotes; 
 
-    // --- REBALANCED FORMULA (FINAL) ---
-    // Reduce weight of PeakNPS significantly to prevent bursts from exploding the score.
-    // Use strong logarithmic compression for anything above 10.
+    // --- REBALANCED FORMULA ---
+    // Target Mappings:
+    // Easy (NPS 1-2) -> 1-4
+    // Normal (NPS 2-4) -> 5-6
+    // Hard (NPS 4-6) -> 7-8
+    // Expert (NPS 6-8) -> 9-10
+    // Titan (NPS 8+) -> 12-18
     
-    const weightedAvg = avgNps * 0.5; // Slightly reduced from 0.65
-    const weightedPeak = peakNps * 0.05; // Heavily reduced from 0.15
+    const weightedAvg = avgNps * 1.5; 
+    const weightedPeak = peakNps * 0.1;
 
     let rawScore = weightedAvg + weightedPeak;
     
-    // Apply compression
-    if (rawScore > 10) {
-        // Logarithmic compression:
-        // Input 11 -> ~11
-        // Input 15 -> ~13
-        // Input 25 -> ~15
-        // Input 50 -> ~17
-        const surplus = rawScore - 10;
-        
-        // Base 10 + 2.5 * log2(surplus + 1)
-        // log2(2) = 1 -> 12.5
-        // log2(5) = 2.3 -> 15.75
-        // log2(17) = 4 -> 20
-        rawScore = 10 + (Math.log2(surplus + 1) * 2.5);
-    }
-    
     // Hard cap to ensure UI never sees Lv 35 again
+    // We strictly limit to 20, but the generation parameters should naturally fit < 18 for most songs.
     return Math.max(1, Math.min(20, rawScore));
 };
