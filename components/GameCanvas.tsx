@@ -496,7 +496,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                      const cx = noteX + noteW / 2;
                      const cy = headY;
                      const sizeX = noteW / 2;
-                     const sizeY = noteW / 4; // Flattened height
+                     const sizeY = noteW / 8; // Flattened height (previously /4)
                      
                      ctx.beginPath();
                      ctx.moveTo(cx, cy - sizeY); // Top

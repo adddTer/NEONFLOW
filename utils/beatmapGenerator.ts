@@ -290,6 +290,6 @@ export const calculateDifficultyRating = (notes: Note[], duration: number): numb
         rawScore = 10 + (Math.log2(surplus + 1) * 2.5);
     }
     
-    // Hard cap just in case to prevent UI breakage, though formula should handle it
-    return Math.max(1, Math.min(25, rawScore));
+    // Hard cap to ensure UI never sees Lv 35 again
+    return Math.max(1, Math.min(20, rawScore));
 };

@@ -1,5 +1,6 @@
 import { SavedSong } from '../types';
 import JSZip from 'jszip';
+import { calculateDifficultyRating } from '../utils/beatmapGenerator';
 
 const DB_NAME = 'NeonFlowDB';
 const STORE_NAME = 'songs';
@@ -39,11 +40,24 @@ export const getAllSongs = async (): Promise<SavedSong[]> => {
     const request = store.getAll();
     request.onsuccess = () => {
         const songs = request.result as SavedSong[];
-        // Backwards compatibility for songs created before 'type' field existed
+        // Backwards compatibility and Migration
         songs.forEach(song => {
+             // 1. Ensure type exists
              song.notes.forEach(note => {
                  if (!note.type) note.type = 'NORMAL';
              });
+             
+             // 2. MIGRATION: Force recalculate difficulty rating
+             // Old songs might have inflated ratings (e.g., 35). We use the new formula here to patch them on display.
+             if (song.notes && song.notes.length > 0 && song.duration > 0) {
+                 const newRating = calculateDifficultyRating(song.notes, song.duration);
+                 // Only update if difference is significant or it's clearly the old broken value (>20)
+                 if (song.difficultyRating > 20 || Math.abs(song.difficultyRating - newRating) > 1.0) {
+                     song.difficultyRating = newRating;
+                     // Note: We are updating the object in memory. 
+                     // We could persist this back to DB, but for now, correcting it for display is enough.
+                 }
+             }
         });
         songs.sort((a, b) => b.createdAt - a.createdAt);
         resolve(songs);
@@ -159,8 +173,15 @@ export const parseSongImport = async (file: File): Promise<SavedSong> => {
 
         const audioArrayBuffer = await audioFile.async("arraybuffer");
 
+        // Use current calculation to ensure imported songs are also rated correctly
+        let rating = metaData.difficultyRating;
+        if (metaData.notes && metaData.duration) {
+             rating = calculateDifficultyRating(metaData.notes, metaData.duration);
+        }
+
         return {
             ...metaData,
+            difficultyRating: rating,
             audioData: audioArrayBuffer,
             id: crypto.randomUUID(),
             createdAt: Date.now()
@@ -204,9 +225,13 @@ const parseLegacyJsonImport = (file: File): Promise<SavedSong> => {
                         if (!n.type) n.type = 'NORMAL';
                     });
                 }
+                
+                // Recalc rating
+                const rating = calculateDifficultyRating(json.notes || [], json.duration || 1);
 
                 const song: SavedSong = {
                     ...json,
+                    difficultyRating: rating,
                     id: crypto.randomUUID(),
                     audioData: audioBuffer,
                     createdAt: Date.now()
