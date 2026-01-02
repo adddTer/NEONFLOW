@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Music, Loader2, Settings, X, Key, ExternalLink, ArrowLeft, Play, Zap, BarChart, Hand, Keyboard, AlertTriangle, CheckCircle, Check, ChevronLeft } from 'lucide-react';
+import { Music, Loader2, Settings, X, Key, ExternalLink, ArrowLeft, Play, Zap, BarChart, Hand, Keyboard, AlertTriangle, CheckCircle, Check, ChevronLeft, ShieldAlert } from 'lucide-react';
 import { analyzeAudioDSP } from './utils/audioAnalyzer';
 import { analyzeStructureWithGemini } from './services/geminiService';
 import { generateBeatmap, calculateDifficultyRating } from './utils/beatmapGenerator';
 import { saveSong, getAllSongs, parseSongImport, updateSongMetadata } from './services/storageService';
 import { calculateGrade } from './utils/scoring';
+import { GoogleGenAI } from "@google/genai"; // Import for validation
 import GameCanvas from './components/GameCanvas';
 import { LibraryScreen } from './components/screens/LibraryScreen';
 import { ResultScreen } from './components/screens/ResultScreen';
@@ -48,17 +49,66 @@ function App() {
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [customApiKey, setCustomApiKey] = useState("");
-  const [apiKeyStatus, setApiKeyStatus] = useState<'valid' | 'missing'>('missing');
+  // 'valid' = verified working, 'invalid' = verified failed, 'missing' = no key, 'checking' = in progress
+  const [apiKeyStatus, setApiKeyStatus] = useState<'valid' | 'missing' | 'checking' | 'invalid'>('missing');
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const hasEnvKey = !!process.env.API_KEY;
 
+  // Initial Check
   useEffect(() => {
-     if (hasEnvKey || customApiKey.trim().length > 0) {
-         setApiKeyStatus('valid');
-     } else {
-         setApiKeyStatus('missing');
-     }
-  }, [customApiKey, hasEnvKey]);
+     const checkKey = async () => {
+         const keyToUse = customApiKey.trim() || process.env.API_KEY;
+         if (!keyToUse) {
+             setApiKeyStatus('missing');
+             return;
+         }
+         
+         // Don't auto-validate constantly if it's just typing, but we need an initial state.
+         // For now, we assume 'missing' until explicit verify if custom, 
+         // or verify once if env.
+         if (hasEnvKey && !customApiKey) {
+            validateKey(process.env.API_KEY!);
+         } else if (customApiKey) {
+            // If we have a saved key in memory (e.g. from previous component render), validate it?
+            // Since we don't persist to localstorage in this demo code, we start empty.
+         }
+     };
+     checkKey();
+  }, []);
+
+  const validateKey = async (key: string) => {
+      setApiKeyStatus('checking');
+      setValidationError(null);
+      try {
+          const ai = new GoogleGenAI({ apiKey: key });
+          // Lightweight check: Count tokens on a tiny prompt
+          await ai.models.countTokens({
+             model: 'gemini-3-flash-preview',
+             contents: { parts: [{ text: 'ping' }] }
+          });
+          setApiKeyStatus('valid');
+          return true;
+      } catch (e: any) {
+          console.error("API Validation Failed", e);
+          setApiKeyStatus('invalid');
+          setValidationError(e.message || "Failed to connect to Gemini API");
+          return false;
+      }
+  };
+
+  const handleSaveSettings = async () => {
+      if (!customApiKey.trim() && !hasEnvKey) {
+          setApiKeyStatus('missing');
+          return;
+      }
+      
+      const key = customApiKey.trim() || process.env.API_KEY || "";
+      const isValid = await validateKey(key);
+      if (isValid) {
+          setShowSettings(false);
+      }
+  };
 
   useEffect(() => {
     loadLibrary();
@@ -406,21 +456,34 @@ function App() {
                      <X className="w-6 h-6" />
                  </button>
 
-                 <h2 className="text-2xl font-black flex items-center gap-3 mb-8">
+                 <h2 className="text-2xl font-black flex items-center gap-3 mb-4">
                      <Settings className="w-6 h-6 text-neon-blue" />
                      设置
                  </h2>
+                 
+                 <div className="mb-6 p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-xs text-blue-200 flex items-start gap-2">
+                     <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                     <span>本应用仅支持 Google Gemini API。请确保您的 API Key 有效且具有 gemini-3-flash-preview 模型访问权限。</span>
+                 </div>
 
                  <div className="space-y-6">
-                    <div className={`p-4 rounded-2xl border flex items-center justify-between ${apiKeyStatus === 'valid' ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+                    <div className={`p-4 rounded-2xl border flex items-center justify-between ${apiKeyStatus === 'valid' ? 'bg-green-500/10 border-green-500/20' : apiKeyStatus === 'invalid' ? 'bg-red-500/10 border-red-500/20' : 'bg-gray-800/50 border-white/10'}`}>
                          <span className="font-bold text-sm text-gray-200">API 状态</span>
                          {apiKeyStatus === 'valid' ? (
                             <span className="flex items-center gap-1.5 text-green-400 font-bold text-xs uppercase">
                                 <Check className="w-3.5 h-3.5"/> Connected
                             </span>
-                         ) : (
+                         ) : apiKeyStatus === 'checking' ? (
+                            <span className="flex items-center gap-1.5 text-yellow-400 font-bold text-xs uppercase">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin"/> Verifying...
+                            </span>
+                         ) : apiKeyStatus === 'invalid' ? (
                             <span className="flex items-center gap-1.5 text-red-400 font-bold text-xs uppercase">
-                                <AlertTriangle className="w-3.5 h-3.5"/> Disconnected
+                                <AlertTriangle className="w-3.5 h-3.5"/> Error
+                            </span>
+                         ) : (
+                            <span className="flex items-center gap-1.5 text-gray-400 font-bold text-xs uppercase">
+                                Not Configured
                             </span>
                          )}
                     </div>
@@ -431,23 +494,36 @@ function App() {
                             <input 
                                 type="password" 
                                 value={customApiKey}
-                                onChange={(e) => setCustomApiKey(e.target.value)}
+                                onChange={(e) => {
+                                    setCustomApiKey(e.target.value);
+                                    if (apiKeyStatus !== 'missing') setApiKeyStatus('missing'); // Reset status on edit
+                                }}
                                 placeholder={hasEnvKey ? "已配置环境变量" : "在此粘贴 API Key"}
                                 className="w-full bg-black/30 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white text-sm focus:border-neon-blue focus:ring-1 focus:ring-neon-blue transition-all outline-none"
                             />
                             <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-4 h-4" />
                         </div>
+                        {validationError && (
+                             <p className="text-[10px] text-red-400 mt-1">{validationError}</p>
+                        )}
                         <p className="text-[10px] text-gray-600 leading-relaxed">
-                            NeonFlow 需要 API Key 来进行 AI 音乐分析。您的 Key 仅存储在本地浏览器中。
+                            您的 Key 仅存储在本地浏览器中。如果验证失败，请检查网络连接或 Key 权限。
                         </p>
                     </div>
 
                     <div className="pt-4">
                         <button 
-                            onClick={() => setShowSettings(false)}
-                            className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-colors shadow-lg"
+                            onClick={handleSaveSettings}
+                            disabled={apiKeyStatus === 'checking'}
+                            className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                         >
-                            保存
+                            {apiKeyStatus === 'checking' ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin"/> 正在验证...
+                                </>
+                            ) : (
+                                "保存并验证"
+                            )}
                         </button>
                     </div>
                  </div>
@@ -491,10 +567,10 @@ function App() {
           ) : (
              <button 
                onClick={() => setShowSettings(true)}
-               className={`p-3 rounded-xl transition-all flex items-center gap-2 border ${apiKeyStatus === 'missing' ? 'text-red-400 border-red-500/30 bg-red-500/10 hover:bg-red-500/20' : 'text-gray-400 border-white/5 hover:text-white hover:bg-white/5'}`}
+               className={`p-3 rounded-xl transition-all flex items-center gap-2 border ${apiKeyStatus !== 'valid' ? 'text-red-400 border-red-500/30 bg-red-500/10 hover:bg-red-500/20' : 'text-gray-400 border-white/5 hover:text-white hover:bg-white/5'}`}
                title="Settings"
              >
-               {apiKeyStatus === 'missing' && <span className="text-xs font-bold hidden md:inline">SETUP API</span>}
+               {apiKeyStatus !== 'valid' && <span className="text-xs font-bold hidden md:inline">SETUP API</span>}
                <Settings className="w-5 h-5" />
              </button>
           )}
@@ -520,7 +596,7 @@ function App() {
                 onImportMapClick={handleImportMap}
                 onSelectSong={handleSelectSong}
                 onRefreshLibrary={loadLibrary}
-                hasApiKey={apiKeyStatus === 'valid'}
+                hasApiKey={apiKeyStatus === 'valid'} 
                 onOpenSettings={() => setShowSettings(true)}
             />
         )}

@@ -129,14 +129,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   };
 
   const handleCreateClick = () => {
-      if (!hasApiKey) {
-          // Replaced window.confirm with a simpler check logic or custom modal?
-          // Since this is a simple "Go to settings" prompt, I'll direct open settings if key missing
-          // without asking, or assume user knows to click settings icon.
-          // But to be helpful, let's just show a notification or open settings directly.
-          onOpenSettings();
-          return;
-      }
+      // Logic update: The button is disabled if no key, but if somehow clicked:
+      if (!hasApiKey) return; 
       audioInputRef.current?.click();
   };
   
@@ -352,13 +346,13 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 
                     <button 
                         onClick={handleCreateClick} 
-                        disabled={isLoading}
+                        disabled={isLoading || !hasApiKey}
                         className={`flex items-center gap-2 px-6 py-2.5 text-sm font-bold rounded-xl transition-all group border
                             ${hasApiKey 
                                 ? 'bg-white text-black hover:bg-neon-blue hover:border-neon-blue hover:shadow-[0_0_20px_rgba(0,243,255,0.4)] border-transparent' 
-                                : 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed'
+                                : 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed opacity-50'
                             }`}
-                        title={hasApiKey ? "创作新谱面" : "请先在设置中配置 API Key"}
+                        title={hasApiKey ? "创作新谱面" : "API 未连接，功能已锁定"}
                     >
                         {isLoading ? (
                             <span className="animate-spin">⏳</span>
