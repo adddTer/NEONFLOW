@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Music, Loader2, Settings, X, Key, ExternalLink, ArrowLeft, Play, Zap, BarChart, Hand, Keyboard, AlertTriangle, CheckCircle, Check, ChevronLeft, ShieldAlert } from 'lucide-react';
+import { Music, Loader2, Settings, X, Key, ExternalLink, ArrowLeft, Play, Zap, BarChart, Hand, Keyboard, AlertTriangle, CheckCircle, Check, ChevronLeft, ShieldAlert, Smartphone } from 'lucide-react';
 import { analyzeAudioDSP } from './utils/audioAnalyzer';
 import { analyzeStructureWithGemini } from './services/geminiService';
 import { generateBeatmap, calculateDifficultyRating } from './utils/beatmapGenerator';
@@ -33,6 +33,9 @@ function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
   
+  // Mobile Orientation
+  const [isPortrait, setIsPortrait] = useState(false);
+
   // Library State
   const [librarySongs, setLibrarySongs] = useState<SavedSong[]>([]);
   const [isLibraryLoading, setIsLibraryLoading] = useState(true);
@@ -64,17 +67,24 @@ function App() {
              return;
          }
          
-         // Don't auto-validate constantly if it's just typing, but we need an initial state.
-         // For now, we assume 'missing' until explicit verify if custom, 
-         // or verify once if env.
          if (hasEnvKey && !customApiKey) {
             validateKey(process.env.API_KEY!);
          } else if (customApiKey) {
-            // If we have a saved key in memory (e.g. from previous component render), validate it?
-            // Since we don't persist to localstorage in this demo code, we start empty.
+            // Check
          }
      };
      checkKey();
+  }, []);
+
+  // Orientation Check
+  useEffect(() => {
+    const checkOrientation = () => {
+        // Simple check: Height > Width usually means portrait on mobile
+        setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    return () => window.removeEventListener('resize', checkOrientation);
   }, []);
 
   const validateKey = async (key: string) => {
@@ -277,10 +287,7 @@ function App() {
       setStatus(GameStatus.Library);
       setLoadingStage("");
 
-      // Optional: Show summary via temporary UI or just log (Keeping it simple per requirements)
       if (failCount > 0) {
-          // If we had a notification system, we'd use it here. 
-          // For now, logging to console and maybe setting a non-blocking error message
           console.warn(`Batch import complete. Success: ${successCount}, Failed: ${failCount}`);
       }
   };
@@ -379,15 +386,37 @@ function App() {
     startCountdown();
   };
 
+  const isGameActive = status === GameStatus.Playing || status === GameStatus.Countdown;
+
   return (
     <div 
-      className="min-h-screen w-full flex flex-col transition-colors duration-700 font-sans text-white select-none relative overflow-hidden"
+      className="h-[100dvh] w-full flex flex-col transition-colors duration-700 font-sans text-white select-none relative overflow-hidden"
       style={{ 
         background: status === GameStatus.Library 
             ? '#050505' 
             : `radial-gradient(circle at center, ${theme.secondaryColor}11 0%, #050505 100%)` 
       }}
     >
+      {/* Landscape Warning Overlay */}
+      {isGameActive && isPortrait && (
+        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center text-center p-8 backdrop-blur-md animate-fade-in touch-none">
+            <div className="relative mb-6">
+                 <div className="absolute inset-0 bg-neon-blue blur-xl opacity-20"></div>
+                 <Smartphone className="w-16 h-16 text-neon-blue relative z-10 animate-spin-slow" style={{ animationDuration: '3s' }} />
+            </div>
+            <h2 className="text-2xl font-black text-white mb-3 tracking-wide">建议横屏游玩</h2>
+            <p className="text-gray-400 text-sm leading-relaxed max-w-xs">
+                为了获得最佳的宽屏视野并支持多指操作，<br/>请旋转您的设备。
+            </p>
+            <button 
+                onClick={() => setIsPortrait(false)} 
+                className="mt-8 px-6 py-2 rounded-full border border-white/10 text-xs font-bold text-gray-500 hover:text-white hover:bg-white/10 transition-colors uppercase tracking-widest"
+            >
+                忽略并继续
+            </button>
+        </div>
+      )}
+
       {/* --- MODALS SECTION --- */}
 
       {/* 1. Song Configuration Modal */}
@@ -543,7 +572,7 @@ function App() {
                                 value={customApiKey}
                                 onChange={(e) => {
                                     setCustomApiKey(e.target.value);
-                                    if (apiKeyStatus !== 'missing') setApiKeyStatus('missing'); // Reset status on edit
+                                    if (apiKeyStatus !== 'missing') setApiKeyStatus('missing'); 
                                 }}
                                 placeholder={hasEnvKey ? "已配置环境变量" : "在此粘贴 API Key"}
                                 className="w-full bg-black/30 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white text-sm focus:border-neon-blue focus:ring-1 focus:ring-neon-blue transition-all outline-none"
@@ -586,49 +615,37 @@ function App() {
         </div>
       )}
 
-      {/* Header */}
-      <header className="p-6 border-b border-white/5 bg-[#050505]/80 backdrop-blur-md flex justify-between items-center z-40 sticky top-0">
-        <div className="flex items-center gap-3 cursor-pointer group" onClick={backToLibrary}>
-          <div className="relative">
-              <div className="absolute inset-0 bg-neon-blue blur-lg opacity-20 group-hover:opacity-40 transition-opacity"></div>
-              <Music className="w-8 h-8 relative z-10 transition-colors" style={{ color: status === GameStatus.Library ? '#00f3ff' : theme.primaryColor }} />
-          </div>
-          <h1 className="text-2xl font-black tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 group-hover:to-white transition-all">
-            NEON<span style={{ color: status === GameStatus.Library ? '#00f3ff' : theme.primaryColor }}>FLOW</span>
-          </h1>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          {status === GameStatus.Playing || status === GameStatus.Countdown ? (
-            <div className="flex gap-8 font-mono font-bold text-xl select-none">
-              <div className="flex flex-col items-end leading-none gap-1">
-                 <span className="text-[10px] text-gray-500 tracking-widest">SCORE</span>
-                 <span>{Math.floor(score.score)}</span>
+      {/* Header - HIDE WHEN PLAYING */}
+      {!isGameActive && (
+          <header className="p-6 border-b border-white/5 bg-[#050505]/80 backdrop-blur-md flex justify-between items-center z-40 sticky top-0 shrink-0">
+            <div className="flex items-center gap-3 cursor-pointer group" onClick={backToLibrary}>
+              <div className="relative">
+                  <div className="absolute inset-0 bg-neon-blue blur-lg opacity-20 group-hover:opacity-40 transition-opacity"></div>
+                  <Music className="w-8 h-8 relative z-10 transition-colors" style={{ color: status === GameStatus.Library ? '#00f3ff' : theme.primaryColor }} />
               </div>
-              <div className="w-px h-8 bg-white/10"></div>
-              <div className="flex flex-col items-start leading-none gap-1">
-                 <span className="text-[10px] text-gray-500 tracking-widest">COMBO</span>
-                 <span className="text-neon-yellow">{score.combo}</span>
-              </div>
+              <h1 className="text-2xl font-black tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 group-hover:to-white transition-all">
+                NEON<span style={{ color: status === GameStatus.Library ? '#00f3ff' : theme.primaryColor }}>FLOW</span>
+              </h1>
             </div>
-          ) : (
-             <button 
-               onClick={() => setShowSettings(true)}
-               className={`p-3 rounded-xl transition-all flex items-center gap-2 border ${apiKeyStatus !== 'valid' ? 'text-red-400 border-red-500/30 bg-red-500/10 hover:bg-red-500/20' : 'text-gray-400 border-white/5 hover:text-white hover:bg-white/5'}`}
-               title="Settings"
-             >
-               {apiKeyStatus !== 'valid' && <span className="text-xs font-bold hidden md:inline">SETUP API</span>}
-               <Settings className="w-5 h-5" />
-             </button>
-          )}
-        </div>
-      </header>
+            
+            <div className="flex items-center gap-4">
+                 <button 
+                   onClick={() => setShowSettings(true)}
+                   className={`p-3 rounded-xl transition-all flex items-center gap-2 border ${apiKeyStatus !== 'valid' ? 'text-red-400 border-red-500/30 bg-red-500/10 hover:bg-red-500/20' : 'text-gray-400 border-white/5 hover:text-white hover:bg-white/5'}`}
+                   title="Settings"
+                 >
+                   {apiKeyStatus !== 'valid' && <span className="text-xs font-bold hidden md:inline">SETUP API</span>}
+                   <Settings className="w-5 h-5" />
+                 </button>
+            </div>
+          </header>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 relative flex flex-col items-center justify-center overflow-hidden w-full">
         
-        {/* Background Decorative Elements */}
-        {status !== GameStatus.Library && (
+        {/* Background Decorative Elements - Simplified for Mobile */}
+        {status !== GameStatus.Library && status !== GameStatus.Playing && (
             <div className="absolute inset-0 pointer-events-none transition-colors duration-1000">
                 <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] opacity-10 rounded-full blur-[150px]" style={{ backgroundColor: theme.primaryColor }} />
                 <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] opacity-10 rounded-full blur-[150px]" style={{ backgroundColor: theme.secondaryColor }} />
@@ -669,57 +686,75 @@ function App() {
         )}
 
         {status === GameStatus.Ready && (
-          <div className="z-10 text-center space-y-8 animate-fade-in p-12 bg-[#0a0a0a]/80 rounded-[3rem] border border-white/10 backdrop-blur-3xl shadow-2xl max-w-xl w-full relative group">
+          <div className="z-10 text-center space-y-4 md:space-y-8 animate-fade-in p-6 md:p-12 bg-[#0a0a0a]/80 rounded-[2rem] md:rounded-[3rem] border border-white/10 backdrop-blur-3xl shadow-2xl max-w-xl w-[90%] md:w-full relative group max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col justify-center">
              {/* Glow effect behind card */}
-             <div className="absolute inset-0 bg-neon-blue/5 rounded-[3rem] blur-xl -z-10 group-hover:bg-neon-blue/10 transition-colors duration-500"></div>
+             <div className="absolute inset-0 bg-neon-blue/5 rounded-[3rem] blur-xl -z-10 group-hover:bg-neon-blue/10 transition-colors duration-500 pointer-events-none"></div>
 
-             <button onClick={backToLibrary} className="absolute top-6 left-6 p-3 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors">
-                 <ArrowLeft className="w-6 h-6" />
-             </button>
-
-             <div className="space-y-4 pt-8">
+             <div className="flex items-center justify-between w-full">
+                <button onClick={backToLibrary} className="p-3 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+                    <ArrowLeft className="w-6 h-6" />
+                </button>
                 <span className="inline-block px-3 py-1 rounded-full bg-neon-blue/10 text-neon-blue text-xs font-bold uppercase tracking-widest border border-neon-blue/20">
-                    Ready to Start
+                    Ready
                 </span>
-                <h2 className="text-4xl md:text-5xl font-black text-white leading-tight" style={{ textShadow: `0 0 40px ${theme.primaryColor}44` }}>
+             </div>
+
+             <div className="space-y-2 md:space-y-4 pt-2">
+                <h2 className="text-2xl md:text-5xl font-black text-white leading-tight break-words" style={{ textShadow: `0 0 40px ${theme.primaryColor}44` }}>
                     {songName}
                 </h2>
              </div>
 
-             <div className="grid grid-cols-2 gap-4 py-8">
+             <div className="grid grid-cols-2 gap-4 py-4 md:py-8">
                 <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div className="text-3xl font-black text-white">{notes.length}</div>
+                    <div className="text-2xl md:text-3xl font-black text-white">{notes.length}</div>
                     <div className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Objects</div>
                 </div>
                 <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div className="text-3xl font-black text-white">{(notes.length / (audioBuffer?.duration || 60)).toFixed(1)}</div>
+                    <div className="text-2xl md:text-3xl font-black text-white">{(notes.length / (audioBuffer?.duration || 60)).toFixed(1)}</div>
                     <div className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">NPS</div>
                 </div>
              </div>
              
-             <div className="space-y-6">
+             <div className="space-y-6 pb-2">
                 <button 
                     onClick={startCountdown}
-                    className="w-full py-6 rounded-2xl font-black text-xl uppercase tracking-widest transition-all bg-white text-black hover:bg-neon-blue hover:scale-[1.02] shadow-[0_10px_40px_-10px_rgba(255,255,255,0.3)] flex items-center justify-center gap-3"
+                    className="w-full py-4 md:py-6 rounded-2xl font-black text-xl uppercase tracking-widest transition-all bg-white text-black hover:bg-neon-blue hover:scale-[1.02] shadow-[0_10px_40px_-10px_rgba(255,255,255,0.3)] flex items-center justify-center gap-3 shrink-0"
                 >
                     <Play className="fill-current w-6 h-6" />
                     Start Game
                 </button>
-                <div className="text-xs text-gray-600 font-mono">PRESS SPACE TO START</div>
+                <div className="text-xs text-gray-600 font-mono hidden md:block">PRESS SPACE TO START</div>
              </div>
           </div>
         )}
 
         {status === GameStatus.Countdown && (
             <div className="z-50 absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                <div className="text-[15rem] font-black italic text-white animate-pulse-fast tracking-tighter" style={{ textShadow: `0 0 80px ${theme.primaryColor}`}}>
+                <div className="text-[10rem] md:text-[15rem] font-black italic text-white animate-pulse-fast tracking-tighter" style={{ textShadow: `0 0 80px ${theme.primaryColor}`}}>
                     {countdown > 0 ? countdown : 'GO!'}
                 </div>
             </div>
         )}
 
         {status === GameStatus.Playing && (
-            <div className="absolute inset-0 z-0">
+            <div className="absolute inset-0 z-0 w-full h-full">
+                 {/* In-Game Header (Score) moved to overlay inside GameCanvas or just floating here */}
+                 <div className="absolute top-0 left-0 right-0 p-4 md:p-6 z-30 flex justify-between pointer-events-none">
+                     <div className="text-white font-bold opacity-50 text-xs md:text-sm">{songName}</div>
+                     <div className="flex gap-4 md:gap-8 font-mono font-bold text-xl select-none">
+                        <div className="flex flex-col items-end leading-none gap-1">
+                             <span className="text-[8px] md:text-[10px] text-gray-500 tracking-widest">SCORE</span>
+                             <span>{Math.floor(score.score)}</span>
+                        </div>
+                        <div className="w-px h-8 bg-white/10"></div>
+                        <div className="flex flex-col items-start leading-none gap-1">
+                             <span className="text-[8px] md:text-[10px] text-gray-500 tracking-widest">COMBO</span>
+                             <span className="text-neon-yellow">{score.combo}</span>
+                        </div>
+                     </div>
+                 </div>
+
                  <GameCanvas 
                     status={status}
                     audioBuffer={audioBuffer}
@@ -742,9 +777,9 @@ function App() {
         
       </main>
       
-      {/* Footer Instructions */}
+      {/* Footer Instructions - Hide on mobile if playing */}
       {status !== GameStatus.Playing && status !== GameStatus.Countdown && (
-          <footer className="p-6 text-center text-[10px] text-gray-700 uppercase tracking-[0.2em] bg-[#050505]">
+          <footer className="p-4 md:p-6 text-center text-[8px] md:text-[10px] text-gray-700 uppercase tracking-[0.2em] bg-[#050505] shrink-0">
              <p>NeonFlow v1.0 • AI Rhythm Engine</p>
           </footer>
       )}

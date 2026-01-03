@@ -241,6 +241,7 @@ const generateRawFallback = (onsets: Onset[], laneCount: number): Note[] => {
 /**
  * 计算谱面的加权难度系数 (用于 UI 显示 1-15+ 级)
  * 重新平衡算法：防止高密度下的数值膨胀
+ * 修改：12-20级曲线不再线性，而是更加陡峭 (数值增长变慢)，20级以上为Ω
  */
 export const calculateDifficultyRating = (notes: Note[], duration: number): number => {
     if (notes.length === 0 || duration === 0) return 0;
@@ -267,20 +268,23 @@ export const calculateDifficultyRating = (notes: Note[], duration: number): numb
     }
     const peakNps = maxWindowNotes; 
 
-    // --- REBALANCED FORMULA ---
-    // Target Mappings:
-    // Easy (NPS 1-2) -> 1-4
-    // Normal (NPS 2-4) -> 5-6
-    // Hard (NPS 4-6) -> 7-8
-    // Expert (NPS 6-8) -> 9-10
-    // Titan (NPS 8+) -> 12-18
-    
     const weightedAvg = avgNps * 1.5; 
     const weightedPeak = peakNps * 0.1;
 
     let rawScore = weightedAvg + weightedPeak;
     
-    // Hard cap to ensure UI never sees Lv 35 again
-    // We strictly limit to 20, but the generation parameters should naturally fit < 18 for most songs.
-    return Math.max(1, Math.min(20, rawScore));
+    // Non-linear scaling for high difficulty (>12)
+    // Makes the rating grow SLOWER as density increases, meaning the "Difficulty Curve" feels steeper.
+    // To reach Level 20 (Omega), you need a much higher density than linear scaling would suggest.
+    if (rawScore > 12) {
+        const excess = rawScore - 12;
+        // Use a power function < 1 to compress high values
+        // Raw 12 -> 12
+        // Raw 20 (Excess 8) -> 12 + 8^0.75 (~4.7) = 16.7
+        // Raw 30 (Excess 18) -> 12 + 18^0.75 (~8.7) = 20.7 (Omega)
+        // Raw 50 (Excess 38) -> 12 + 38^0.75 (~15.3) = 27.3
+        rawScore = 12 + Math.pow(excess, 0.75); 
+    }
+    
+    return Math.max(1, parseFloat(rawScore.toFixed(1)));
 };
