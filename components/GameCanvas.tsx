@@ -7,6 +7,8 @@ interface GameCanvasProps {
   audioBuffer: AudioBuffer | null;
   notes: Note[];
   theme: AITheme;
+  audioOffset: number; 
+  hideNotes?: boolean; // Changed: Hide notes but keep judgment line
   onScoreUpdate: (score: ScoreState) => void;
   onGameEnd: (finalScore: ScoreState) => void; 
 }
@@ -56,7 +58,7 @@ class Particle {
     this.x += this.vx;
     this.y += this.vy;
     this.vy += 0.15; // Gravity
-    this.life -= 0.02; // Decay
+    this.life -= 0.05; // Faster Decay for performance
     this.size *= 0.95;
   }
 
@@ -64,9 +66,8 @@ class Particle {
     if (this.life <= 0) return;
     ctx.globalAlpha = this.life;
     ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fill();
+    // Optimize: Use fillRect instead of arc for better performance
+    ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
     ctx.globalAlpha = 1.0;
   }
 }
@@ -76,6 +77,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   audioBuffer, 
   notes, 
   theme,
+  audioOffset,
+  hideNotes,
   onScoreUpdate,
   onGameEnd 
 }) => {
@@ -169,7 +172,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const playMusic = () => {
     if (!audioBuffer) return;
     const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-    const ctx = new AudioContextClass();
+    // Optimization: Request low latency interactive mode
+    const ctx = new AudioContextClass({ latencyHint: 'interactive' });
     audioContextRef.current = ctx;
     
     const source = ctx.createBufferSource();
@@ -341,7 +345,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const ctx = audioContextRef.current;
     if (!ctx) return;
     
-    const gameTime = ctx.currentTime - startTimeRef.current;
+    // Apply Audio Offset
+    // audioOffset is in ms. Positive means audio is late (laggy), so we subtract it from gameTime.
+    // gameTime is "how far are we into the song?"
+    // If audio is 0.2s late, when song is at 1.0s, the user actually hears 0.8s.
+    // So logic should behave as if we are at 0.8s.
+    const gameTime = (ctx.currentTime - startTimeRef.current) - (audioOffset / 1000);
 
     const hitNote = notesRef.current.find(n => 
       !n.hit && 
@@ -381,6 +390,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       scoreRef.current.score += baseScore * (1 + Math.min(scoreRef.current.combo, 100) / 50);
     }
     
+    // In blind mode (hideNotes), allow clicking empty space to trigger hit visuals
+    // This provides feedback on WHERE the user thought the note was
+    if (hideNotes && !hitNote) {
+        triggerHitVisuals(lane, 'GOOD'); // Dummy visual feedback
+    }
+
     onScoreUpdate({...scoreRef.current});
   };
 
@@ -400,7 +415,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
       const canvas = canvasRef.current;
       if (canvas) {
-          const dpr = window.devicePixelRatio || 1;
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
           const laneW = laneWidthRef.current;
           const startX = startXRef.current;
           
@@ -409,10 +424,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           const hitY = (canvas.height / dpr) * 0.85 * dpr; // Height is already scaled
           
           const hitColor = isPerfect ? theme.perfectColor : theme.goodColor;
-          spawnParticles(laneX, hitY, hitColor, isPerfect ? 20 : 10);
+          spawnParticles(laneX, hitY, hitColor, isPerfect ? 15 : 8); // Reduced particle count
       }
 
       const hitColor = isPerfect ? theme.perfectColor : theme.goodColor;
+      
+      // Always show text feedback (even if notes are hidden), 
+      // but maybe suppress it if the user wants purely audio? 
+      // User request said "Not hide judgment line, but hide elements". 
+      // Usually implies hiding the falling notes. Hit effect is useful.
       effectRef.current.push({
         id: Math.random(),
         text: type,
@@ -441,7 +461,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!ctx) return;
 
     // --- HIGH DPI & RESIZE HANDLING ---
-    const dpr = window.devicePixelRatio || 1;
+    // Cap DPR to 2 for performance on mobile 3x/4x screens
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const rect = container.getBoundingClientRect();
     
     if (canvas.width !== Math.floor(rect.width * dpr) || canvas.height !== Math.floor(rect.height * dpr)) {
@@ -464,7 +485,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const speed = scrollSpeedRef.current; // Dynamic Speed
     const hitLineY = height * 0.80; 
 
-    const gameTime = audioContextRef.current.currentTime - startTimeRef.current;
+    // Calculate Game Time with Offset
+    const rawTime = audioContextRef.current.currentTime - startTimeRef.current;
+    const gameTime = rawTime - (audioOffset / 1000);
     const duration = audioBuffer?.duration || 1;
 
     // --- DRAWING ---
@@ -482,7 +505,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const x = startX + i * laneW;
         const isPressed = keyStateRef.current[i];
         
-        // Lane Miss Red Flash
+        // Lane Miss Red Flash (Always show for feedback)
         if (laneMissStateRef.current[i] > 0) {
             ctx.fillStyle = `rgba(255, 50, 50, ${laneMissStateRef.current[i] * 0.3})`; 
             ctx.fillRect(x, 0, laneW, height);
@@ -500,6 +523,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             laneHitStateRef.current[i] = Math.max(0, alpha - 0.1);
         }
         
+        // Always draw lanes (even if hideNotes is on)
         // Lane Divider / Track
         ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
         ctx.fillRect(x, 0, laneW, height);
@@ -520,15 +544,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             ctx.fillRect(x, 0, laneW, hitLineY);
         }
 
-        // RECEPTOR
+        // RECEPTOR (Always visible)
         const receptorX = x + 2;
         const receptorW = laneW - 4;
         
-        ctx.shadowBlur = isPressed ? 25 : 0;
-        ctx.shadowColor = theme.primaryColor;
         ctx.fillStyle = isPressed ? theme.primaryColor : 'rgba(255,255,255,0.5)';
         ctx.fillRect(receptorX, hitLineY - 2, receptorW, 14); 
-        ctx.shadowBlur = 0;
         
         if (width >= 768) {
             const labelY = hitLineY + 50;
@@ -610,65 +631,81 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const noteW = laneW - (pad * 2);
         const noteX = startX + note.lane * laneW + pad;
         
+        // Calculate rendering position
         if (headY > -200 || (headY - note.duration * speed) < height) {
-            if (note.duration > 0) {
-                // Hold Body
-                const bodyHeight = note.duration * speed;
-                let drawHeadY = headY;
-                let drawHeight = bodyHeight;
+            // ONLY DRAW IF NOTES ARE NOT HIDDEN
+            if (!hideNotes) {
+                if (note.duration > 0) {
+                    // Hold Body
+                    const bodyHeight = note.duration * speed;
+                    let drawHeadY = headY;
+                    let drawHeight = bodyHeight;
 
-                if (note.isHolding) {
-                    drawHeadY = hitLineY;
-                    const remainingTime = (note.time + note.duration) - gameTime;
-                    drawHeight = Math.max(0, remainingTime * speed);
+                    if (note.isHolding) {
+                        drawHeadY = hitLineY;
+                        const remainingTime = (note.time + note.duration) - gameTime;
+                        drawHeight = Math.max(0, remainingTime * speed);
+                    }
+                    
+                    ctx.fillStyle = `${theme.secondaryColor}CC`;
+                    ctx.fillRect(noteX + 4, drawHeadY - drawHeight, noteW - 8, drawHeight);
+                    
+                    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(noteX + 4, drawHeadY - drawHeight, noteW - 8, drawHeight);
                 }
-                ctx.fillStyle = `${theme.secondaryColor}99`;
-                ctx.fillRect(noteX + 4, drawHeadY - drawHeight, noteW - 8, drawHeight);
+
+                if (!note.isHolding || note.duration === 0) {
+                    if (note.type === 'CATCH') {
+                        // ... Draw Diamond ...
+                        const cx = noteX + noteW / 2;
+                        const cy = headY;
+                        const sizeX = noteW / 2;
+                        const sizeY = noteW / 6;
+
+                        ctx.fillStyle = theme.goodColor + '33';
+                        ctx.beginPath();
+                        ctx.moveTo(cx, cy - sizeY - 4); 
+                        ctx.lineTo(cx + sizeX + 4, cy); 
+                        ctx.lineTo(cx, cy + sizeY + 4); 
+                        ctx.lineTo(cx - sizeX - 4, cy); 
+                        ctx.closePath();
+                        ctx.fill();
+
+                        ctx.fillStyle = '#000000'; 
+                        ctx.strokeStyle = theme.goodColor;
+                        ctx.lineWidth = 3;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(cx, cy - sizeY); 
+                        ctx.lineTo(cx + sizeX, cy); 
+                        ctx.lineTo(cx, cy + sizeY); 
+                        ctx.lineTo(cx - sizeX, cy); 
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.stroke();
+
+                        ctx.fillStyle = theme.goodColor;
+                        ctx.beginPath();
+                        ctx.moveTo(cx, cy - sizeY/2.5);
+                        ctx.lineTo(cx + sizeX/2.5, cy);
+                        ctx.lineTo(cx, cy + sizeY/2.5);
+                        ctx.lineTo(cx - sizeX/2.5, cy);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else {
+                        // ... Draw Rect ...
+                        ctx.fillStyle = theme.secondaryColor + '44';
+                        ctx.fillRect(noteX - 2, headY - 14, noteW + 4, 28);
+
+                        ctx.fillStyle = theme.secondaryColor;
+                        ctx.fillRect(noteX, headY - 12, noteW, 24);
+                        
+                        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+                        ctx.fillRect(noteX, headY - 8, noteW, 8);
+                    }
+                } 
             }
-
-            if (!note.isHolding || note.duration === 0) {
-                if (note.type === 'CATCH') {
-                     // Catch Note (Diamond)
-                     ctx.shadowBlur = 15;
-                     ctx.shadowColor = theme.goodColor;
-                     ctx.fillStyle = '#000000'; 
-                     ctx.strokeStyle = theme.goodColor;
-                     ctx.lineWidth = 4;
-                     
-                     const cx = noteX + noteW / 2;
-                     const cy = headY;
-                     const sizeX = noteW / 2;
-                     const sizeY = noteW / 6;
-                     
-                     ctx.beginPath();
-                     ctx.moveTo(cx, cy - sizeY); 
-                     ctx.lineTo(cx + sizeX, cy); 
-                     ctx.lineTo(cx, cy + sizeY); 
-                     ctx.lineTo(cx - sizeX, cy); 
-                     ctx.closePath();
-                     ctx.fill();
-                     ctx.stroke();
-
-                     // Inner fill
-                     ctx.fillStyle = theme.goodColor;
-                     ctx.beginPath();
-                     ctx.moveTo(cx, cy - sizeY/2.5);
-                     ctx.lineTo(cx + sizeX/2.5, cy);
-                     ctx.lineTo(cx, cy + sizeY/2.5);
-                     ctx.lineTo(cx - sizeX/2.5, cy);
-                     ctx.closePath();
-                     ctx.fill();
-                     ctx.shadowBlur = 0;
-                } else {
-                     // Normal Note
-                     ctx.shadowBlur = 15;
-                     ctx.shadowColor = theme.secondaryColor;
-                     ctx.fillRect(noteX, headY - 12, noteW, 24);
-                     ctx.shadowBlur = 0;
-                     ctx.fillStyle = 'rgba(255,255,255,0.95)';
-                     ctx.fillRect(noteX, headY - 8, noteW, 8);
-                }
-            } 
         }
     });
 
@@ -692,8 +729,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const currentScale = effect.scale * (1 - progress * 0.5); 
         ctx.translate(x, y);
         ctx.scale(currentScale, currentScale);
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = effect.color;
         ctx.globalAlpha = 1 - progress; 
         ctx.fillText(effect.text, 0, 0);
         ctx.restore();
@@ -707,10 +742,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         comboScaleRef.current = comboScaleRef.current + (1.0 - comboScaleRef.current) * 0.1;
         const combo = scoreRef.current.combo;
         let comboColor = '#ffffff';
-        let glowColor = 'transparent';
 
-        if (combo >= 100) { comboColor = '#f9f871'; glowColor = '#f9f871'; } 
-        else if (combo >= 50) { comboColor = '#00f3ff'; glowColor = '#00f3ff'; } 
+        if (combo >= 100) { comboColor = '#f9f871'; } 
+        else if (combo >= 50) { comboColor = '#00f3ff'; } 
 
         ctx.save();
         ctx.translate(width / 2, height * 0.2); 
@@ -718,17 +752,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
-        const fontSize = Math.min(80, width * 0.15);
+        const minDim = Math.min(width, height);
+        const fontSize = Math.min(60, minDim * 0.15); 
+        
         ctx.font = `italic 900 ${fontSize}px Arial`;
         
         ctx.fillStyle = comboColor;
-        ctx.shadowBlur = 20;
-        ctx.shadowColor = glowColor;
         ctx.fillText(combo.toString(), 0, 0);
         
-        ctx.font = `bold ${fontSize * 0.3}px Arial`;
+        ctx.font = `bold ${fontSize * 0.4}px Arial`;
         ctx.fillStyle = '#aaaaaa';
-        ctx.shadowBlur = 0;
         ctx.fillText("COMBO", 0, fontSize * 0.6);
         ctx.restore();
     }
@@ -750,14 +783,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       
       {/* 
          Visual indicators for lanes (non-interactive, just guides)
-         We attach touch listeners to the PARENT container now to catch all inputs.
       */}
       <div 
-           className="absolute inset-y-0 z-20 pointer-events-none"
-           style={{
-               left: layout.startX,
-               width: layout.laneWidth * layout.count
-           }}
+            className="absolute inset-y-0 z-20 pointer-events-none"
+            style={{
+                left: layout.startX,
+                width: layout.laneWidth * layout.count
+            }}
       >
         {new Array(layout.count).fill(0).map((_, i) => (
             <div 

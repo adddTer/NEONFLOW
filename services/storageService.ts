@@ -32,35 +32,57 @@ export const saveSong = async (song: SavedSong): Promise<void> => {
   });
 };
 
+export const getSongById = async (id: string): Promise<SavedSong | undefined> => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+
 export const getAllSongs = async (): Promise<SavedSong[]> => {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly');
     const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
-    request.onsuccess = () => {
-        const songs = request.result as SavedSong[];
-        // Backwards compatibility and Migration
-        songs.forEach(song => {
-             // 1. Ensure type exists
-             song.notes.forEach(note => {
-                 if (!note.type) note.type = 'NORMAL';
-             });
+    const songs: SavedSong[] = [];
+    // Use cursor for better memory management and control
+    const request = store.openCursor();
+    
+    request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result;
+        if (cursor) {
+            const song = cursor.value as SavedSong;
+            
+            // Migration / Type fixes
+             if (song.notes) {
+                 song.notes.forEach(note => {
+                     if (!note.type) note.type = 'NORMAL';
+                 });
+             }
              
-             // 2. MIGRATION: Force recalculate difficulty rating
-             // Old songs might have inflated ratings (e.g., 35). We use the new formula here to patch them on display.
+             // Recalculate rating if needed (fix broken old ratings)
              if (song.notes && song.notes.length > 0 && song.duration > 0) {
                  const newRating = calculateDifficultyRating(song.notes, song.duration);
-                 // Only update if difference is significant or it's clearly the old broken value (>20)
                  if (song.difficultyRating > 20 || Math.abs(song.difficultyRating - newRating) > 1.0) {
                      song.difficultyRating = newRating;
-                     // Note: We are updating the object in memory. 
-                     // We could persist this back to DB, but for now, correcting it for display is enough.
                  }
              }
-        });
-        songs.sort((a, b) => b.createdAt - a.createdAt);
-        resolve(songs);
+
+            // OPTIMIZATION: Create lightweight version without heavy audioData for the list
+            // This significantly reduces memory usage and load time for the library screen
+            // We pass a 0-byte buffer to satisfy the type definition while saving memory
+            const lightSong = { ...song, audioData: new ArrayBuffer(0) };
+            songs.push(lightSong);
+            
+            cursor.continue();
+        } else {
+            songs.sort((a, b) => b.createdAt - a.createdAt);
+            resolve(songs);
+        }
     };
     request.onerror = () => reject(request.error);
   });
@@ -106,11 +128,19 @@ export const updateSongMetadata = async (id: string, title: string, artist: stri
  * @param includeHistory Whether to include the 'bestResult' field in the export
  */
 export const exportSongAsZip = async (song: SavedSong, includeHistory: boolean = true) => {
+    // If song is lightweight (from list), fetch full data first
+    let fullSong = song;
+    if (song.audioData.byteLength === 0) {
+        const fetched = await getSongById(song.id);
+        if (fetched) fullSong = fetched;
+        else throw new Error(`Could not find full audio data for song ${song.id}`);
+    }
+
     const zip = new JSZip();
     
     // 1. Create JSON part (exclude heavy audioData)
     // If includeHistory is false, we strip the bestResult
-    const { audioData, bestResult, ...metaData } = song;
+    const { audioData, bestResult, ...metaData } = fullSong;
     
     const exportData = {
         ...metaData,
@@ -122,7 +152,9 @@ export const exportSongAsZip = async (song: SavedSong, includeHistory: boolean =
     const jsonContent = JSON.stringify(exportData);
     
     zip.file("map.json", jsonContent);
-    zip.file("audio.bin", song.audioData);
+    // OPTIMIZATION: Use STORE for audio to avoid re-compressing already compressed audio
+    // This makes the export process significantly faster
+    zip.file("audio.bin", fullSong.audioData, { compression: "STORE" });
 
     // 2. Generate ZIP
     const blob = await zip.generateAsync({type: "blob"});
@@ -131,7 +163,7 @@ export const exportSongAsZip = async (song: SavedSong, includeHistory: boolean =
     const url = URL.createObjectURL(blob);
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", url);
-    downloadAnchorNode.setAttribute("download", `${song.title}.nfz`); // NeonFlow Zip
+    downloadAnchorNode.setAttribute("download", `${fullSong.title}.nfz`); // NeonFlow Zip
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();

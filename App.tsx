@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Music, Loader2, Settings, X, Key, ExternalLink, ArrowLeft, Play, Zap, BarChart, Hand, Keyboard, AlertTriangle, CheckCircle, Check, ChevronLeft, ShieldAlert, Smartphone } from 'lucide-react';
+import { Music, Loader2, Settings, X, Key, ExternalLink, ArrowLeft, Play, Zap, BarChart, Hand, Keyboard, AlertTriangle, CheckCircle, Check, ChevronLeft, ShieldAlert, Smartphone, Volume2 } from 'lucide-react';
 import { analyzeAudioDSP } from './utils/audioAnalyzer';
 import { analyzeStructureWithGemini } from './services/geminiService';
 import { generateBeatmap, calculateDifficultyRating } from './utils/beatmapGenerator';
-import { saveSong, getAllSongs, parseSongImport, updateSongMetadata } from './services/storageService';
+import { saveSong, getAllSongs, parseSongImport, updateSongMetadata, getSongById } from './services/storageService';
 import { calculateGrade } from './utils/scoring';
 import { GoogleGenAI } from "@google/genai"; // Import for validation
 import GameCanvas from './components/GameCanvas';
 import { LibraryScreen } from './components/screens/LibraryScreen';
 import { ResultScreen } from './components/screens/ResultScreen';
+import { AudioCalibration } from './components/screens/AudioCalibration';
 import { Note, GameStatus, ScoreState, AITheme, DEFAULT_THEME, SavedSong, BeatmapDifficulty, LaneCount, PlayStyle, GameResult } from './types';
 
 // Helper to convert file to base64
@@ -33,6 +34,10 @@ function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
   
+  // Audio Offset (Latency Calibration)
+  const [audioOffset, setAudioOffset] = useState<number>(0); // in ms
+  const [showCalibration, setShowCalibration] = useState(false);
+
   // Mobile Orientation
   const [isPortrait, setIsPortrait] = useState(false);
 
@@ -58,8 +63,13 @@ function App() {
 
   const hasEnvKey = !!process.env.API_KEY;
 
-  // Initial Check
+  // Initial Load (API Key & Audio Offset)
   useEffect(() => {
+     const savedOffset = localStorage.getItem('neonflow_audio_offset');
+     if (savedOffset) {
+         setAudioOffset(Number(savedOffset));
+     }
+
      const checkKey = async () => {
          const keyToUse = customApiKey.trim() || process.env.API_KEY;
          if (!keyToUse) {
@@ -118,6 +128,18 @@ function App() {
       if (isValid) {
           setShowSettings(false);
       }
+  };
+
+  const openCalibration = () => {
+      setShowSettings(false); // Close settings to avoid overlap
+      setShowCalibration(true);
+  };
+
+  const closeCalibration = (newOffset: number) => {
+      setAudioOffset(newOffset);
+      localStorage.setItem('neonflow_audio_offset', String(newOffset));
+      setShowCalibration(false);
+      setShowSettings(true); // Re-open settings
   };
 
   useEffect(() => {
@@ -188,7 +210,7 @@ function App() {
       const arrayBuffer = await file.arrayBuffer();
       const audioCtxBuffer = arrayBuffer.slice(0); // Clone for audio context
       const saveBuffer = arrayBuffer.slice(0); // Clone for storage
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ latencyHint: 'interactive' });
       
       const { buffer, onsets } = await analyzeAudioDSP(audioCtxBuffer, audioContext);
 
@@ -296,13 +318,21 @@ function App() {
       setIsSongLoading(true);
       setCurrentSongId(song.id);
       try {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const decodedBuffer = await audioContext.decodeAudioData(song.audioData.slice(0));
+          // OPTIMIZATION: Check if we have the full audio data (library now returns lightweight versions)
+          let fullSong = song;
+          if (song.audioData.byteLength === 0) {
+              const fetched = await getSongById(song.id);
+              if (!fetched) throw new Error("Song not found in DB");
+              fullSong = fetched;
+          }
+
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ latencyHint: 'interactive' });
+          const decodedBuffer = await audioContext.decodeAudioData(fullSong.audioData.slice(0));
           
           setAudioBuffer(decodedBuffer);
-          setNotes(song.notes);
-          setTheme(song.theme);
-          setSongName(song.title);
+          setNotes(fullSong.notes);
+          setTheme(fullSong.theme);
+          setSongName(fullSong.title);
           setStatus(GameStatus.Ready);
       } catch (e) {
           console.error("Failed to load song audio", e);
@@ -347,8 +377,10 @@ function App() {
 
     // Save high score if better
     if (currentSongId) {
-        const song = librarySongs.find(s => s.id === currentSongId);
-        if (song) {
+        // Find song in library (which is lightweight now)
+        const songIndex = librarySongs.findIndex(s => s.id === currentSongId);
+        if (songIndex !== -1) {
+            const song = librarySongs[songIndex];
             const total = notes.length;
             const { rank } = calculateGrade(resultScore.perfect, resultScore.good, resultScore.miss, total);
             
@@ -364,9 +396,16 @@ function App() {
             };
 
             if (!song.bestResult || newResult.score > song.bestResult.score) {
-                const updatedSong = { ...song, bestResult: newResult };
-                await saveSong(updatedSong);
-                await loadLibrary(); 
+                // Update in DB (we need to be careful not to overwrite audioData with empty buffer if we just save `song`)
+                // `saveSong` overwrites. We should fetch full, update, and save.
+                // OR better: use a specialized update method. 
+                // For now, simpler: fetch full -> update -> save.
+                const fullSong = await getSongById(song.id);
+                if (fullSong) {
+                    const updatedSong = { ...fullSong, bestResult: newResult };
+                    await saveSong(updatedSong);
+                    await loadLibrary(); 
+                }
             }
         }
     }
@@ -415,6 +454,14 @@ function App() {
                 忽略并继续
             </button>
         </div>
+      )}
+      
+      {/* Audio Calibration Screen */}
+      {showCalibration && (
+          <AudioCalibration 
+            initialOffset={audioOffset} 
+            onClose={closeCalibration} 
+          />
       )}
 
       {/* --- MODALS SECTION --- */}
@@ -543,6 +590,21 @@ function App() {
                  </div>
 
                  <div className="space-y-6">
+                    {/* Audio Calibration Button */}
+                    <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-between">
+                        <div>
+                            <div className="font-bold text-sm text-white">音频延迟校准</div>
+                            <div className="text-xs text-gray-400 mt-1">当前偏移: {audioOffset > 0 ? `+${audioOffset}` : audioOffset}ms</div>
+                        </div>
+                        <button 
+                            onClick={openCalibration}
+                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
+                        >
+                            <Volume2 className="w-3.5 h-3.5" />
+                            校准
+                        </button>
+                    </div>
+
                     <div className={`p-4 rounded-2xl border flex items-center justify-between ${apiKeyStatus === 'valid' ? 'bg-green-500/10 border-green-500/20' : apiKeyStatus === 'invalid' ? 'bg-red-500/10 border-red-500/20' : 'bg-gray-800/50 border-white/10'}`}>
                          <span className="font-bold text-sm text-gray-200">API 状态</span>
                          {apiKeyStatus === 'valid' ? (
@@ -760,6 +822,7 @@ function App() {
                     audioBuffer={audioBuffer}
                     notes={notes}
                     theme={theme}
+                    audioOffset={audioOffset}
                     onScoreUpdate={setScore}
                     onGameEnd={handleGameEnd}
                  />

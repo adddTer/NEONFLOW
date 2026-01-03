@@ -36,15 +36,15 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
   const accuracy = calculateAccuracy(score.perfect, score.good, notesCount);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#050505]/95 backdrop-blur-xl animate-fade-in overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#050505]/95 backdrop-blur-xl animate-fade-in custom-scrollbar">
       
       {/* Dynamic Background Elements */}
       <div className="absolute inset-0 pointer-events-none">
-          <div className={`absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full opacity-20 blur-[150px] transition-colors duration-1000 ${rank === 'D' ? 'bg-red-900' : 'bg-neon-blue'}`}></div>
-          <div className={`absolute bottom-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full opacity-20 blur-[150px] transition-colors duration-1000 ${rank === 'D' ? 'bg-orange-900' : 'bg-neon-purple'}`}></div>
+          <div className={`fixed top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full opacity-20 blur-[150px] transition-colors duration-1000 ${rank === 'D' ? 'bg-red-900' : 'bg-neon-blue'}`}></div>
+          <div className={`fixed bottom-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full opacity-20 blur-[150px] transition-colors duration-1000 ${rank === 'D' ? 'bg-orange-900' : 'bg-neon-purple'}`}></div>
       </div>
 
-      <div className="w-full max-w-6xl h-full md:h-auto flex flex-col md:flex-row items-center justify-between p-8 md:p-16 gap-12 relative z-10">
+      <div className="w-full max-w-6xl min-h-full mx-auto flex flex-col md:flex-row items-center justify-between p-8 md:p-16 gap-12 relative z-10">
         
         {/* Left: Grade & Title */}
         <div className={`flex flex-col items-center md:items-start transition-all duration-1000 transform ${animate ? 'translate-x-0 opacity-100' : '-translate-x-20 opacity-0'}`}>
@@ -118,7 +118,7 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
             </div>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 pb-8 md:pb-0">
                 <button 
                     onClick={onReplay}
                     className="py-5 rounded-2xl bg-white text-black font-bold text-lg hover:bg-neon-blue hover:scale-[1.02] transition-all flex items-center justify-center gap-2 shadow-lg"
