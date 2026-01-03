@@ -410,7 +410,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                     </button>
 
                     <input ref={audioInputRef} type="file" accept="audio/*" onChange={onImportAudioClick} className="hidden" />
-                    <input ref={mapInputRef} type="file" multiple accept=".json,.zip,.nfz" onChange={onImportMapClick} className="hidden" />
+                    <input ref={mapInputRef} type="file" multiple accept=".json,.zip,.nfz,application/json,application/zip,application/octet-stream" onChange={onImportMapClick} className="hidden" />
                  </>
              )}
          </div>
