@@ -72,6 +72,12 @@ class Particle {
   }
 }
 
+interface GhostNote {
+    lane: number;
+    timeDiff: number; // relative time (noteTime - hitTime)
+    life: number;
+}
+
 const GameCanvas: React.FC<GameCanvasProps> = ({ 
   status, 
   audioBuffer, 
@@ -97,6 +103,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const laneHitStateRef = useRef<number[]>([]); 
   const effectRef = useRef<{id: number, text: string, time: number, lane: number, color: string, scale: number}[]>([]);
   const particlesRef = useRef<Particle[]>([]);
+  const ghostNotesRef = useRef<GhostNote[]>([]); // New: Stores "revealed" notes
   const comboScaleRef = useRef<number>(1.0);
 
   // Layout Refs (Updated via ResizeObserver)
@@ -210,6 +217,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       scoreRef.current = { score: 0, combo: 0, maxCombo: 0, perfect: 0, good: 0, miss: 0 };
       effectRef.current = [];
       particlesRef.current = [];
+      ghostNotesRef.current = [];
       comboScaleRef.current = 1.0;
       keyStateRef.current = new Array(laneCountRef.current).fill(false); 
       activeTouchesRef.current.clear();
@@ -346,10 +354,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!ctx) return;
     
     // Apply Audio Offset
-    // audioOffset is in ms. Positive means audio is late (laggy), so we subtract it from gameTime.
-    // gameTime is "how far are we into the song?"
-    // If audio is 0.2s late, when song is at 1.0s, the user actually hears 0.8s.
-    // So logic should behave as if we are at 0.8s.
     const gameTime = (ctx.currentTime - startTimeRef.current) - (audioOffset / 1000);
 
     const hitNote = notesRef.current.find(n => 
@@ -375,6 +379,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
       triggerHitVisuals(lane, type);
 
+      // --- Blind Mode: Reveal Ghost Note ---
+      if (hideNotes) {
+          ghostNotesRef.current.push({
+              lane: lane,
+              timeDiff: hitNote.time - gameTime, // Pos = early, Neg = late
+              life: 1.0
+          });
+      }
+
       hitNote.hit = true;
       if (hitNote.duration > 0) {
           hitNote.isHolding = true;
@@ -390,11 +403,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       scoreRef.current.score += baseScore * (1 + Math.min(scoreRef.current.combo, 100) / 50);
     }
     
-    // In blind mode (hideNotes), allow clicking empty space to trigger hit visuals
-    // This provides feedback on WHERE the user thought the note was
-    if (hideNotes && !hitNote) {
-        triggerHitVisuals(lane, 'GOOD'); // Dummy visual feedback
-    }
+    // Removed unconditional dummy 'GOOD' hit on miss in blind mode
+    // This prevents "random spamming showing GOOD"
 
     onScoreUpdate({...scoreRef.current});
   };
@@ -429,10 +439,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
       const hitColor = isPerfect ? theme.perfectColor : theme.goodColor;
       
-      // Always show text feedback (even if notes are hidden), 
-      // but maybe suppress it if the user wants purely audio? 
-      // User request said "Not hide judgment line, but hide elements". 
-      // Usually implies hiding the falling notes. Hit effect is useful.
       effectRef.current.push({
         id: Math.random(),
         text: type,
@@ -636,7 +642,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             // ONLY DRAW IF NOTES ARE NOT HIDDEN
             if (!hideNotes) {
                 if (note.duration > 0) {
-                    // Hold Body
+                    // Hold Body ... (Standard Drawing) ...
                     const bodyHeight = note.duration * speed;
                     let drawHeadY = headY;
                     let drawHeight = bodyHeight;
@@ -657,7 +663,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
                 if (!note.isHolding || note.duration === 0) {
                     if (note.type === 'CATCH') {
-                        // ... Draw Diamond ...
+                        // ... Diamond ...
                         const cx = noteX + noteW / 2;
                         const cy = headY;
                         const sizeX = noteW / 2;
@@ -694,7 +700,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                         ctx.closePath();
                         ctx.fill();
                     } else {
-                        // ... Draw Rect ...
+                        // ... Rect ...
                         ctx.fillStyle = theme.secondaryColor + '44';
                         ctx.fillRect(noteX - 2, headY - 14, noteW + 4, 28);
 
@@ -707,6 +713,34 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 } 
             }
         }
+    });
+
+    // --- DRAW GHOST NOTES (Hidden notes revealed on hit) ---
+    // Filter dead ghosts
+    ghostNotesRef.current = ghostNotesRef.current.filter(g => g.life > 0);
+    ghostNotesRef.current.forEach(g => {
+        // Calculate Y position based on time difference relative to hit line
+        // timeDiff = noteTime - hitTime
+        // If timeDiff > 0, note was "late" arriving to line (hit early), so it appears ABOVE line?
+        // Wait: headY = hitLineY - (timeDiff * speed)
+        // If timeDiff > 0 (e.g. 0.1s), y = hitLineY - 0.1*speed (Above line)
+        // Correct.
+        const y = hitLineY - (g.timeDiff * speed);
+        const laneX = startX + g.lane * laneW + 4;
+        const noteW = laneW - 8;
+        
+        ctx.globalAlpha = g.life;
+        ctx.fillStyle = theme.secondaryColor;
+        ctx.fillRect(laneX, y - 12, noteW, 24);
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(laneX, y - 12, noteW, 24);
+        
+        ctx.globalAlpha = 1.0;
+        
+        // Decay
+        g.life -= 0.05;
     });
 
     particlesRef.current.forEach((p, i) => {

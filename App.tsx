@@ -469,8 +469,8 @@ function App() {
       {/* 1. Song Configuration Modal */}
       {isConfiguringSong && pendingFile && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
-             <div className="bg-[#0f172a] border border-white/20 rounded-3xl p-8 w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[90vh] overflow-y-auto">
-                 <button onClick={cancelConfiguration} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+             <div className="bg-[#0f172a] border border-white/20 rounded-3xl p-8 w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[90vh] overflow-y-auto custom-scrollbar">
+                 <button onClick={cancelConfiguration} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors z-10 p-2 bg-black/20 rounded-full">
                      <X className="w-6 h-6" />
                  </button>
 
@@ -571,25 +571,26 @@ function App() {
         </div>
       )}
 
-      {/* 2. Settings Modal */}
+      {/* 2. Settings Modal - UPDATED: Added max-h and overflow for mobile */}
       {showSettings && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
-             <div className="bg-[#0f172a] border border-white/20 rounded-3xl p-8 w-full max-w-md shadow-2xl relative">
-                 <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
-                     <X className="w-6 h-6" />
-                 </button>
-
-                 <h2 className="text-2xl font-black flex items-center gap-3 mb-4">
-                     <Settings className="w-6 h-6 text-neon-blue" />
-                     设置
-                 </h2>
+             <div className="bg-[#0f172a] border border-white/20 rounded-3xl p-6 w-full max-w-md shadow-2xl relative max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col">
+                 <div className="flex items-center justify-between mb-6 shrink-0">
+                    <h2 className="text-2xl font-black flex items-center gap-3">
+                        <Settings className="w-6 h-6 text-neon-blue" />
+                        设置
+                    </h2>
+                    <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white transition-colors p-2 bg-white/5 rounded-full">
+                        <X className="w-5 h-5" />
+                    </button>
+                 </div>
                  
-                 <div className="mb-6 p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-xs text-blue-200 flex items-start gap-2">
+                 <div className="mb-6 p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-xs text-blue-200 flex items-start gap-2 shrink-0">
                      <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
                      <span>本应用仅支持 Google Gemini API。请确保您的 API Key 有效且具有 gemini-3-flash-preview 模型访问权限。</span>
                  </div>
 
-                 <div className="space-y-6">
+                 <div className="space-y-6 pb-2">
                     {/* Audio Calibration Button */}
                     <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-between">
                         <div>
