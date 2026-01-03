@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Music, Loader2, Settings, X, Key, ExternalLink, ArrowLeft, Play, Zap, BarChart, Hand, Keyboard, AlertTriangle, CheckCircle, Check, ChevronLeft, ShieldAlert, Smartphone, Volume2 } from 'lucide-react';
+import { Music, Loader2, Settings, X, Key, ExternalLink, ArrowLeft, Play, Zap, BarChart, Hand, Keyboard, AlertTriangle, CheckCircle, Check, ChevronLeft, ShieldAlert, Smartphone, Volume2, AudioWaveform, Clock } from 'lucide-react';
 import { analyzeAudioDSP } from './utils/audioAnalyzer';
 import { analyzeStructureWithGemini } from './services/geminiService';
 import { generateBeatmap, calculateDifficultyRating } from './utils/beatmapGenerator';
@@ -429,11 +429,11 @@ function App() {
 
   return (
     <div 
-      className="h-[100dvh] w-full flex flex-col transition-colors duration-700 font-sans text-white select-none relative overflow-hidden"
+      className="h-[100dvh] w-full flex flex-col transition-colors duration-1000 font-sans text-white select-none relative overflow-hidden"
       style={{ 
         background: status === GameStatus.Library 
-            ? '#050505' 
-            : `radial-gradient(circle at center, ${theme.secondaryColor}11 0%, #050505 100%)` 
+            ? '#030304' 
+            : `radial-gradient(circle at center, ${theme.secondaryColor}22 0%, #030304 100%)` 
       }}
     >
       {/* Landscape Warning Overlay */}
@@ -571,7 +571,7 @@ function App() {
         </div>
       )}
 
-      {/* 2. Settings Modal - UPDATED: Added max-h and overflow for mobile */}
+      {/* 2. Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
              <div className="bg-[#0f172a] border border-white/20 rounded-3xl p-6 w-full max-w-md shadow-2xl relative max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col">
@@ -680,24 +680,28 @@ function App() {
 
       {/* Header - HIDE WHEN PLAYING */}
       {!isGameActive && (
-          <header className="p-6 border-b border-white/5 bg-[#050505]/80 backdrop-blur-md flex justify-between items-center z-40 sticky top-0 shrink-0">
+          <header className="p-4 md:p-6 border-b border-white/5 bg-[#030304]/80 backdrop-blur-xl flex justify-between items-center z-40 sticky top-0 shrink-0">
             <div className="flex items-center gap-3 cursor-pointer group" onClick={backToLibrary}>
               <div className="relative">
                   <div className="absolute inset-0 bg-neon-blue blur-lg opacity-20 group-hover:opacity-40 transition-opacity"></div>
-                  <Music className="w-8 h-8 relative z-10 transition-colors" style={{ color: status === GameStatus.Library ? '#00f3ff' : theme.primaryColor }} />
+                  <Music className="w-7 h-7 md:w-8 md:h-8 relative z-10 transition-colors" style={{ color: status === GameStatus.Library ? '#00f3ff' : theme.primaryColor }} />
               </div>
-              <h1 className="text-2xl font-black tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 group-hover:to-white transition-all">
+              <h1 className="text-xl md:text-2xl font-black tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 group-hover:to-white transition-all">
                 NEON<span style={{ color: status === GameStatus.Library ? '#00f3ff' : theme.primaryColor }}>FLOW</span>
               </h1>
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
                  <button 
                    onClick={() => setShowSettings(true)}
-                   className={`p-3 rounded-xl transition-all flex items-center gap-2 border ${apiKeyStatus !== 'valid' ? 'text-red-400 border-red-500/30 bg-red-500/10 hover:bg-red-500/20' : 'text-gray-400 border-white/5 hover:text-white hover:bg-white/5'}`}
+                   disabled={status === GameStatus.Analyzing} // Disable setting during analysis
+                   className={`p-2.5 md:p-3 rounded-xl transition-all flex items-center gap-2 border 
+                      ${status === GameStatus.Analyzing ? 'opacity-50 cursor-not-allowed border-transparent bg-transparent text-gray-600' :
+                        apiKeyStatus !== 'valid' ? 'text-red-400 border-red-500/30 bg-red-500/10 hover:bg-red-500/20' : 'text-gray-400 border-white/5 hover:text-white hover:bg-white/5'
+                      }`}
                    title="Settings"
                  >
-                   {apiKeyStatus !== 'valid' && <span className="text-xs font-bold hidden md:inline">SETUP API</span>}
+                   {apiKeyStatus !== 'valid' && status !== GameStatus.Analyzing && <span className="text-xs font-bold hidden md:inline">SETUP API</span>}
                    <Settings className="w-5 h-5" />
                  </button>
             </div>
@@ -748,46 +752,96 @@ function App() {
           </div>
         )}
 
+        {/* --- START GAME SCREEN (Refined) --- */}
         {status === GameStatus.Ready && (
-          <div className="z-10 text-center space-y-4 md:space-y-8 animate-fade-in p-6 md:p-12 bg-[#0a0a0a]/80 rounded-[2rem] md:rounded-[3rem] border border-white/10 backdrop-blur-3xl shadow-2xl max-w-xl w-[90%] md:w-full relative group max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col justify-center">
-             {/* Glow effect behind card */}
-             <div className="absolute inset-0 bg-neon-blue/5 rounded-[3rem] blur-xl -z-10 group-hover:bg-neon-blue/10 transition-colors duration-500 pointer-events-none"></div>
-
-             <div className="flex items-center justify-between w-full">
-                <button onClick={backToLibrary} className="p-3 text-gray-500 hover:text-white hover:bg-white/10 rounded-full transition-colors">
-                    <ArrowLeft className="w-6 h-6" />
-                </button>
-                <span className="inline-block px-3 py-1 rounded-full bg-neon-blue/10 text-neon-blue text-xs font-bold uppercase tracking-widest border border-neon-blue/20">
-                    Ready
-                </span>
-             </div>
-
-             <div className="space-y-2 md:space-y-4 pt-2">
-                <h2 className="text-2xl md:text-5xl font-black text-white leading-tight break-words" style={{ textShadow: `0 0 40px ${theme.primaryColor}44` }}>
-                    {songName}
-                </h2>
-             </div>
-
-             <div className="grid grid-cols-2 gap-4 py-4 md:py-8">
-                <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div className="text-2xl md:text-3xl font-black text-white">{notes.length}</div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Objects</div>
-                </div>
-                <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div className="text-2xl md:text-3xl font-black text-white">{(notes.length / (audioBuffer?.duration || 60)).toFixed(1)}</div>
-                    <div className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">NPS</div>
-                </div>
-             </div>
+          <div className="fixed inset-0 z-50 bg-[#0a0a0a] flex flex-col">
              
-             <div className="space-y-6 pb-2">
+             {/* Immersive Background Layers */}
+             <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                 <div className="absolute inset-0 opacity-20 blur-[120px]" style={{ background: `radial-gradient(circle at top center, ${theme.primaryColor}, transparent 60%)` }}></div>
+                 <div className="absolute inset-0 bg-black/60"></div>
+                 <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
+             </div>
+
+             {/* Top Navigation Bar - Fixed */}
+             <div className="relative z-50 flex justify-between items-center p-6 w-full shrink-0">
+                <button 
+                    onClick={backToLibrary} 
+                    className="group flex items-center justify-center w-12 h-12 rounded-full bg-white/5 border border-white/5 backdrop-blur-md hover:bg-white/10 active:scale-95 transition-all"
+                    aria-label="Back"
+                >
+                    <ArrowLeft className="w-6 h-6 text-white group-hover:-translate-x-1 transition-transform" />
+                </button>
+                <div className="px-3 py-1 rounded-full bg-white/5 border border-white/5 backdrop-blur-md text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">
+                    Mission Briefing
+                </div>
+                <div className="w-12"></div> {/* Spacer for alignment */}
+             </div>
+
+             {/* Scrollable Content Area */}
+             <div className="flex-1 overflow-y-auto custom-scrollbar relative z-10 w-full">
+                 <div className="min-h-full flex flex-col items-center justify-center p-6 gap-8 md:gap-12">
+                     
+                     {/* Album Art / Visualizer */}
+                     <div className="relative group shrink-0">
+                         <div className="absolute inset-0 bg-gradient-to-br from-black via-transparent to-black opacity-60 z-10 rounded-full"></div>
+                         <div className="w-48 h-48 md:w-64 md:h-64 rounded-full border-4 border-white/5 shadow-[0_0_60px_rgba(0,0,0,0.6)] relative overflow-hidden flex items-center justify-center bg-black">
+                              <div className="absolute inset-0 animate-spin-slow" style={{ background: `conic-gradient(from 0deg, ${theme.primaryColor}, ${theme.secondaryColor}, ${theme.primaryColor})`, opacity: 0.4, animationDuration: '8s' }}></div>
+                              <Music className="w-20 h-20 text-white/40 relative z-20" />
+                              {/* Inner Ring */}
+                              <div className="absolute inset-4 rounded-full border border-white/10"></div>
+                         </div>
+                     </div>
+                     
+                     {/* Title & Info */}
+                     <div className="text-center space-y-3 max-w-2xl px-4">
+                        <h1 className="text-3xl md:text-5xl font-black text-white leading-tight tracking-tight break-words line-clamp-3" style={{ textShadow: `0 0 30px ${theme.primaryColor}33` }}>
+                            {songName}
+                        </h1>
+                        <div className="flex flex-wrap items-center justify-center gap-3 text-xs md:text-sm font-bold text-gray-500 uppercase tracking-widest">
+                            <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {Math.floor((audioBuffer?.duration || 0) / 60)}:{(Math.floor((audioBuffer?.duration || 0) % 60)).toString().padStart(2,'0')}</span>
+                            <span className="w-1 h-1 rounded-full bg-gray-700"></span>
+                            <span>{notes.length} NOTES</span>
+                            <span className="w-1 h-1 rounded-full bg-gray-700"></span>
+                            <span style={{ color: theme.primaryColor }}>{theme.primaryColor === '#bd00ff' ? '6K TITAN' : '4K STANDARD'}</span>
+                        </div>
+                     </div>
+
+                     {/* Stats Grid */}
+                     <div className="grid grid-cols-3 gap-3 w-full max-w-md px-2">
+                         <div className="bg-white/5 p-4 rounded-2xl border border-white/5 backdrop-blur-md flex flex-col items-center justify-center hover:bg-white/10 transition-colors">
+                             <div className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">DENSITY</div>
+                             <div className="text-xl md:text-2xl font-black text-white">{(notes.length / (audioBuffer?.duration || 60)).toFixed(1)} <span className="text-[10px] text-gray-600 font-normal">NPS</span></div>
+                         </div>
+                         <div className="bg-white/5 p-4 rounded-2xl border border-white/5 backdrop-blur-md flex flex-col items-center justify-center hover:bg-white/10 transition-colors">
+                             <div className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">KEYS</div>
+                             <div className="text-xl md:text-2xl font-black text-white">{theme.primaryColor === '#bd00ff' ? '6' : '4'}</div>
+                         </div>
+                         <div className="bg-white/5 p-4 rounded-2xl border border-white/5 backdrop-blur-md flex flex-col items-center justify-center hover:bg-white/10 transition-colors">
+                             <div className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1">RATING</div>
+                             <div className="text-xl md:text-2xl font-black text-neon-blue">?</div>
+                         </div>
+                     </div>
+                     
+                     {/* Spacing for bottom button on mobile */}
+                     <div className="h-24 md:h-0"></div>
+                 </div>
+             </div>
+
+             {/* Bottom Action Button - Fixed/Sticky */}
+             <div className="absolute bottom-0 left-0 right-0 p-6 z-50 md:relative md:bg-transparent md:p-8 md:pt-0 flex justify-center bg-gradient-to-t from-black via-black/90 to-transparent">
                 <button 
                     onClick={startCountdown}
-                    className="w-full py-4 md:py-6 rounded-2xl font-black text-xl uppercase tracking-widest transition-all bg-white text-black hover:bg-neon-blue hover:scale-[1.02] shadow-[0_10px_40px_-10px_rgba(255,255,255,0.3)] flex items-center justify-center gap-3 shrink-0"
+                    className="group relative w-full max-w-md py-5 rounded-2xl overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.5)] transition-all hover:scale-[1.02] active:scale-95"
                 >
-                    <Play className="fill-current w-6 h-6" />
-                    Start Game
+                    <div className="absolute inset-0 bg-white group-hover:bg-neon-blue transition-colors duration-500"></div>
+                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-30 mix-blend-overlay"></div>
+                    
+                    <div className="relative z-10 flex items-center justify-center gap-3 text-black">
+                        <Play className="fill-current w-6 h-6" />
+                        <span className="text-xl font-black uppercase tracking-[0.2em]">START ENGINE</span>
+                    </div>
                 </button>
-                <div className="text-xs text-gray-600 font-mono hidden md:block">PRESS SPACE TO START</div>
              </div>
           </div>
         )}
@@ -842,8 +896,8 @@ function App() {
       </main>
       
       {/* Footer Instructions - Hide on mobile if playing */}
-      {status !== GameStatus.Playing && status !== GameStatus.Countdown && (
-          <footer className="p-4 md:p-6 text-center text-[8px] md:text-[10px] text-gray-700 uppercase tracking-[0.2em] bg-[#050505] shrink-0">
+      {status !== GameStatus.Playing && status !== GameStatus.Countdown && status !== GameStatus.Ready && (
+          <footer className="p-4 md:p-6 text-center text-[8px] md:text-[10px] text-gray-700 uppercase tracking-[0.2em] bg-[#030304] shrink-0 border-t border-white/5">
              <p>NeonFlow v1.0 • AI Rhythm Engine</p>
           </footer>
       )}

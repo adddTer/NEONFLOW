@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Play, Trash2, Edit2, Download, CheckSquare, Square, Music, Clock, Zap, Plus, FileJson, Trophy, Layers, Lock, Disc, Info, X, Calendar, Activity, Loader2, AlertTriangle } from 'lucide-react';
+import { Upload, Play, Trash2, Edit2, Download, CheckSquare, Square, Music, Clock, Zap, Plus, FileJson, Trophy, Layers, Lock, Disc, Info, X, Calendar, Activity, Loader2, AlertTriangle, PlayCircle } from 'lucide-react';
 import { SavedSong } from '../../types';
 import { deleteSong, updateSongMetadata, exportSongAsZip } from '../../services/storageService';
 import { calculateAccuracy } from '../../utils/scoring';
@@ -220,92 +220,99 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
           </div>
       )}
 
-      {/* --- Details Modal --- */}
+      {/* --- Details Modal (Improved Design) --- */}
       {detailSong && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-              <div className="bg-[#0f172a] border border-white/20 rounded-2xl w-full max-w-2xl shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]">
-                   {/* Header Background */}
-                   <div className="h-32 absolute top-0 left-0 right-0 z-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none"></div>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
+              <div className="bg-[#0f172a] border border-white/10 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]">
+                   {/* Gradient Header */}
+                   <div 
+                        className="absolute top-0 left-0 right-0 h-48 z-0" 
+                        style={{ background: `linear-gradient(to bottom, ${detailSong.theme?.secondaryColor || '#333'} 0%, #0f172a 100%)`, opacity: 0.6 }}
+                   ></div>
                    
                    <button 
                         onClick={() => setShowDetailsId(null)} 
-                        className="absolute top-4 right-4 text-gray-400 hover:text-white z-50 bg-black/20 p-2 rounded-full backdrop-blur-md cursor-pointer pointer-events-auto hover:bg-black/40 transition-colors"
+                        className="absolute top-4 right-4 text-white/70 hover:text-white z-50 bg-black/30 p-2 rounded-full backdrop-blur-md hover:bg-black/50 transition-colors"
                    >
                       <X className="w-5 h-5" />
                    </button>
 
-                   <div className="p-8 pb-4 relative z-10">
-                       <h2 className="text-3xl font-black text-white mb-1 leading-tight">{detailSong.title}</h2>
-                       <p className="text-lg text-gray-400 font-medium mb-4">{detailSong.artist} {detailSong.album ? `— ${detailSong.album}` : ''}</p>
+                   <div className="p-8 pb-4 relative z-10 pt-16">
+                       <h2 className="text-3xl md:text-5xl font-black text-white mb-2 leading-tight tracking-tight shadow-sm drop-shadow-lg">{detailSong.title}</h2>
+                       <p className="text-lg md:text-xl text-white/80 font-medium mb-6">{detailSong.artist} {detailSong.album ? `— ${detailSong.album}` : ''}</p>
                        
-                       <div className="flex flex-wrap gap-2 mb-6">
-                           <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-mono text-gray-300 border border-white/5 flex items-center gap-1">
-                               <Clock className="w-3 h-3" /> {formatTime(detailSong.duration)}
-                           </span>
-                           <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-mono text-gray-300 border border-white/5 flex items-center gap-1">
-                               <Activity className="w-3 h-3" /> BPM {Math.round(detailSong.structure.bpm)}
-                           </span>
-                           <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-mono text-gray-300 border border-white/5 flex items-center gap-1">
-                               <Zap className="w-3 h-3" /> {detailSong.notes.length} Notes
-                           </span>
-                           <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-mono text-gray-300 border border-white/5 flex items-center gap-1">
-                               <Calendar className="w-3 h-3" /> {new Date(detailSong.createdAt).toLocaleDateString()}
-                           </span>
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                           <div className="bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/5">
+                               <div className="text-[10px] text-gray-400 uppercase tracking-widest">Length</div>
+                               <div className="text-white font-bold">{formatTime(detailSong.duration)}</div>
+                           </div>
+                           <div className="bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/5">
+                               <div className="text-[10px] text-gray-400 uppercase tracking-widest">BPM</div>
+                               <div className="text-white font-bold">{Math.round(detailSong.structure.bpm)}</div>
+                           </div>
+                           <div className="bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/5">
+                               <div className="text-[10px] text-gray-400 uppercase tracking-widest">Objects</div>
+                               <div className="text-white font-bold">{detailSong.notes.length}</div>
+                           </div>
+                           <div className="bg-black/40 backdrop-blur-md p-3 rounded-xl border border-white/5">
+                               <div className="text-[10px] text-gray-400 uppercase tracking-widest">Mode</div>
+                               <div className="text-white font-bold">{detailSong.laneCount}K</div>
+                           </div>
                        </div>
                    </div>
 
-                   <div className="flex-1 overflow-y-auto px-8 pb-8 custom-scrollbar relative z-10">
-                       <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                           <Trophy className="w-4 h-4" /> 历史最佳成绩
+                   <div className="flex-1 overflow-y-auto px-8 pb-8 custom-scrollbar relative z-10 bg-[#0f172a]">
+                       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                           <Trophy className="w-4 h-4 text-yellow-500" /> 最佳战绩
                        </h3>
                        
                        {detailSong.bestResult ? (
-                           <div className="bg-white/5 rounded-2xl border border-white/10 p-6">
-                               <div className="flex items-center justify-between mb-6">
-                                   <div>
-                                       <div className="text-4xl font-black text-white font-mono">{detailSong.bestResult.score}</div>
-                                       <div className="text-xs text-gray-500 uppercase tracking-wider mt-1">Total Score</div>
+                           <div className="bg-white/5 rounded-2xl border border-white/10 p-6 flex flex-col md:flex-row items-center gap-6">
+                               <div className="flex-1 text-center md:text-left">
+                                   <div className="text-5xl font-black italic text-transparent bg-clip-text bg-gradient-to-br from-neon-blue to-white drop-shadow-lg">
+                                       {detailSong.bestResult.rank}
                                    </div>
-                                   <div className="text-right">
-                                       <div className="text-6xl font-black italic text-neon-blue drop-shadow-lg">{detailSong.bestResult.rank}</div>
-                                   </div>
-                               </div>
-
-                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                   <div className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center">
-                                       <span className="text-xs text-gray-500 uppercase">Perfect</span>
-                                       <span className="text-xl font-bold text-neon-purple">{detailSong.bestResult.perfect}</span>
-                                   </div>
-                                   <div className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center">
-                                       <span className="text-xs text-gray-500 uppercase">Good</span>
-                                       <span className="text-xl font-bold text-neon-blue">{detailSong.bestResult.good}</span>
-                                   </div>
-                                   <div className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center">
-                                       <span className="text-xs text-gray-500 uppercase">Miss</span>
-                                       <span className="text-xl font-bold text-gray-400">{detailSong.bestResult.miss}</span>
-                                   </div>
-                                   <div className="bg-black/30 p-3 rounded-xl border border-white/5 flex flex-col items-center">
-                                       <span className="text-xs text-gray-500 uppercase">Max Combo</span>
-                                       <span className="text-xl font-bold text-neon-yellow">{detailSong.bestResult.maxCombo}</span>
-                                   </div>
+                                   <div className="text-2xl font-bold text-white mt-1">{detailSong.bestResult.score.toLocaleString()}</div>
                                </div>
                                
-                               <div className="text-center text-xs text-gray-600 font-mono">
-                                   RECORDED AT: {new Date(detailSong.bestResult.timestamp).toLocaleString()}
+                               <div className="w-px h-16 bg-white/10 hidden md:block"></div>
+
+                               <div className="flex-1 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                                   <div className="flex justify-between">
+                                       <span className="text-gray-500">Perf</span>
+                                       <span className="font-mono text-neon-purple font-bold">{detailSong.bestResult.perfect}</span>
+                                   </div>
+                                   <div className="flex justify-between">
+                                       <span className="text-gray-500">Good</span>
+                                       <span className="font-mono text-neon-blue font-bold">{detailSong.bestResult.good}</span>
+                                   </div>
+                                   <div className="flex justify-between">
+                                       <span className="text-gray-500">Miss</span>
+                                       <span className="font-mono text-gray-400 font-bold">{detailSong.bestResult.miss}</span>
+                                   </div>
+                                   <div className="flex justify-between">
+                                       <span className="text-gray-500">Combo</span>
+                                       <span className="font-mono text-neon-yellow font-bold">{detailSong.bestResult.maxCombo}</span>
+                                   </div>
                                </div>
                            </div>
                        ) : (
-                           <div className="h-32 flex flex-col items-center justify-center text-gray-500 bg-white/5 rounded-2xl border border-dashed border-white/10">
-                               <p>暂无游玩记录</p>
-                               <p className="text-xs mt-2">快去挑战吧！</p>
+                           <div className="h-24 flex items-center justify-center text-gray-600 bg-white/5 rounded-2xl border border-dashed border-white/5">
+                               暂无记录
                            </div>
                        )}
                    </div>
                    
-                   <div className="p-6 border-t border-white/10 bg-[#0f172a] z-20">
-                       <button onClick={() => { onSelectSong(detailSong); setShowDetailsId(null); }} className="w-full py-4 bg-neon-blue text-black font-bold rounded-xl hover:bg-white transition-colors flex items-center justify-center gap-2">
-                           <Play className="w-5 h-5 fill-current" />
-                           开始游戏
+                   <div className="p-6 border-t border-white/5 bg-[#0f172a] z-20">
+                       <button 
+                            onClick={() => { onSelectSong(detailSong); setShowDetailsId(null); }} 
+                            className="group relative w-full py-4 rounded-xl overflow-hidden shadow-lg hover:shadow-neon-blue/20 transition-all"
+                       >
+                           <div className="absolute inset-0 bg-white group-hover:bg-neon-blue transition-colors"></div>
+                           <div className="relative z-10 flex items-center justify-center gap-2 text-black font-black uppercase tracking-widest">
+                               <Play className="w-5 h-5 fill-current" />
+                               START GAME
+                           </div>
                        </button>
                    </div>
               </div>
@@ -313,17 +320,17 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
       )}
 
       {/* --- Toolbar --- */}
-      <div className="flex flex-col gap-4 mb-4 bg-[#0f172a]/90 backdrop-blur-md p-4 rounded-2xl border border-white/10 shadow-2xl z-10 shrink-0">
+      <div className="flex flex-col gap-4 mb-4 bg-[#0f172a]/80 backdrop-blur-md p-4 rounded-3xl border border-white/10 shadow-2xl z-10 shrink-0">
          <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-blue to-purple-600 flex items-center justify-center text-white shadow-lg">
-                    <Music className="w-6 h-6" />
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center text-white shadow-inner">
+                    <Music className="w-6 h-6 text-neon-blue" />
                 </div>
                 <div>
                     <h2 className="text-xl md:text-2xl font-black text-white tracking-tight">
                         我的曲库
                     </h2>
-                    <p className="text-xs text-gray-400 uppercase tracking-wider">{songs.length} 首曲目</p>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider font-bold">{songs.length} TRACKS</p>
                 </div>
             </div>
             
@@ -332,13 +339,13 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                  <button 
                         onClick={handleCreateClick} 
                         disabled={isLoading || !hasApiKey}
-                        className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all border
+                        className={`flex items-center justify-center w-12 h-12 rounded-xl transition-all border
                             ${hasApiKey 
-                                ? 'bg-neon-blue text-black border-transparent' 
+                                ? 'bg-white text-black border-transparent shadow-lg shadow-white/10 active:scale-95' 
                                 : 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed opacity-50'
                             }`}
                     >
-                        {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                        {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-6 h-6" />}
                  </button>
             </div>
          </div>
@@ -421,7 +428,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               </p>
           </div>
       ) : (
-          <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pb-24 pr-1">
+          <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pb-24 p-4 md:p-6">
               {songs.map(song => {
                   const levelInfo = (song as any)._displayLevel || getLevelDisplay(song.difficultyRating);
                   const primaryColor = song.theme?.primaryColor || '#00f3ff';
@@ -430,54 +437,53 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                   return (
                   <div 
                     key={song.id}
-                    className={`group relative flex flex-row items-stretch bg-[#131b2e] border transition-all duration-300 rounded-xl overflow-hidden hover:shadow-xl
+                    className={`group relative flex flex-row items-stretch bg-[#0a0f1e] border transition-all duration-300 rounded-2xl overflow-hidden hover:shadow-2xl hover:scale-[1.01]
                         ${selectedIds.has(song.id) ? 'border-neon-blue' : 'border-white/5 hover:border-white/20'}
                     `}
                     style={{
-                        background: `linear-gradient(90deg, ${secondaryColor}33 0%, #131b2e 60%)`,
+                        // Background gradient that subtly hints the song color
+                        backgroundImage: `linear-gradient(90deg, ${secondaryColor}11 0%, transparent 100%)`,
                         borderColor: selectedIds.has(song.id) ? primaryColor : undefined
                     }}
                   >
                       {/* Selection Checkbox (Left) */}
                       {isSelectionMode && (
                           <div 
-                            className="pl-3 pr-1 cursor-pointer flex items-center justify-center bg-black/20"
+                            className="pl-4 pr-2 cursor-pointer flex items-center justify-center"
                             onClick={() => toggleSelection(song.id)}
                           >
-                             <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedIds.has(song.id) ? 'bg-neon-blue border-neon-blue text-black' : 'border-gray-600 bg-black/40'}`}>
-                                {selectedIds.has(song.id) && <CheckSquare className="w-3.5 h-3.5" />}
+                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors ${selectedIds.has(song.id) ? 'bg-neon-blue border-neon-blue text-black' : 'border-gray-600 bg-black/40'}`}>
+                                {selectedIds.has(song.id) && <CheckSquare className="w-4 h-4" />}
                              </div>
                           </div>
                       )}
 
-                      {/* Level Badge (Left) - Responsive Width */}
-                      <div className="w-20 md:w-24 shrink-0 border-r border-white/5 flex flex-col items-center justify-center bg-black/20 relative p-2">
+                      {/* Level Badge (Left) - Modernized */}
+                      <div className="w-20 md:w-24 shrink-0 flex flex-col items-center justify-center relative p-3">
                            <div 
-                                className={`w-10 h-10 md:w-12 md:h-12 rounded-lg border-2 flex flex-col items-center justify-center transition-all bg-black/40 shadow-lg ${levelInfo.isTitan ? 'shadow-purple-500/30' : ''}`}
+                                className={`w-12 h-12 md:w-14 md:h-14 rounded-xl border flex flex-col items-center justify-center transition-all bg-black/40 shadow-lg backdrop-blur-sm relative overflow-hidden`}
                                 style={{
-                                    borderColor: levelInfo.color,
+                                    borderColor: `${levelInfo.color}44`,
                                     color: levelInfo.color,
-                                    boxShadow: levelInfo.isOmega ? `0 0 15px ${levelInfo.color}66` : `0 0 10px ${levelInfo.color}22`
+                                    boxShadow: levelInfo.isOmega ? `0 0 20px ${levelInfo.color}33` : undefined
                                 }}
                            >
-                               <span className={`font-black italic leading-none ${levelInfo.isOmega ? 'text-2xl md:text-3xl' : 'text-xl md:text-2xl'}`}>
+                               <div className="absolute inset-0 opacity-20" style={{backgroundColor: levelInfo.color}}></div>
+                               <span className={`font-black italic leading-none z-10 ${levelInfo.isOmega ? 'text-2xl md:text-3xl' : 'text-xl md:text-2xl'}`}>
                                    {levelInfo.val}
                                </span>
-                               {/* Only show LV if not Omega */}
-                               {!levelInfo.isOmega && (
-                                   <span className="text-[7px] md:text-[8px] font-normal not-italic opacity-80 font-sans leading-none mt-0.5">LV</span>
-                               )}
                            </div>
-
+                           
+                           {/* Rank Badge */}
                            {song.bestResult && (
-                               <div className="mt-2 text-xs font-black text-white bg-white/10 px-2 py-0.5 rounded border border-white/5">
+                               <div className="absolute -bottom-1 md:bottom-2 bg-black/80 text-white border border-white/20 px-2 py-0.5 rounded text-[10px] font-black shadow-lg">
                                    {song.bestResult.rank}
                                </div>
                            )}
                       </div>
 
                       {/* Info Section (Middle) */}
-                      <div className="flex-1 p-3 md:p-4 min-w-0 flex flex-col justify-center gap-1.5">
+                      <div className="flex-1 p-3 md:p-4 min-w-0 flex flex-col justify-center gap-1">
                            {editingId === song.id ? (
                                <div className="flex flex-col gap-2 w-full">
                                   <input 
@@ -499,29 +505,25 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                                </div>
                            ) : (
                                <>
-                                   <div className="flex items-center gap-2 overflow-hidden">
-                                       <h3 className="font-bold text-base md:text-xl text-white truncate" title={song.title}>{song.title}</h3>
-                                       {song.theme?.moodDescription && (
-                                           <span 
-                                                className="hidden md:inline-block px-2 py-0.5 rounded text-[10px] bg-white/5 border border-white/5 uppercase tracking-wide shrink-0"
-                                                style={{ color: primaryColor, borderColor: `${primaryColor}33` }}
-                                           >
-                                               {song.theme.moodDescription}
-                                           </span>
-                                       )}
+                                   <div className="flex items-center gap-2 overflow-hidden mb-1">
+                                       <h3 className="font-black text-lg md:text-xl text-white truncate tracking-tight" title={song.title}>{song.title}</h3>
                                    </div>
                                    
-                                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
-                                       <span className="truncate max-w-[120px] md:max-w-xs">{song.artist || 'Unknown'}</span>
+                                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-gray-500">
+                                       <span className="truncate max-w-[120px] md:max-w-xs text-gray-400">{song.artist || 'Unknown Artist'}</span>
                                        
-                                       <span className="w-0.5 h-2.5 bg-white/10"></span>
+                                       <span className="w-1 h-1 rounded-full bg-gray-600"></span>
                                        
                                        <span>{formatTime(song.duration)}</span>
                                        
+                                       <span className="w-1 h-1 rounded-full bg-gray-600"></span>
+
+                                       <span>{Math.round(song.structure.bpm)} BPM</span>
+                                       
                                        {song.laneCount === 6 && (
                                             <>
-                                                <span className="w-0.5 h-2.5 bg-white/10"></span>
-                                                <span className="text-purple-300 font-bold">6K</span>
+                                                <span className="w-1 h-1 rounded-full bg-gray-600"></span>
+                                                <span className="text-purple-400 font-bold border border-purple-500/30 px-1 rounded bg-purple-500/10">6K</span>
                                             </>
                                        )}
                                    </div>
@@ -531,33 +533,39 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 
                       {/* Actions Section (Right) */}
                       {!isSelectionMode && !editingId && (
-                          <div className="flex items-center gap-1 md:gap-2 pr-2 md:pr-4">
-                              {/* Desktop-only secondary actions */}
-                              <div className="hidden md:flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                  <button onClick={() => setShowDetailsId(song.id)} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition">
-                                      <Info className="w-4 h-4" />
-                                  </button>
-                                  <button onClick={() => startEdit(song)} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition">
+                          <div className="flex items-center gap-1 md:gap-3 pr-3 md:pr-6">
+                              
+                              {/* Desktop Edit/Info */}
+                              <div className="hidden md:flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-200 transform translate-x-2 group-hover:translate-x-0">
+                                  <button onClick={() => startEdit(song)} className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition">
                                       <Edit2 className="w-4 h-4" />
                                   </button>
                               </div>
 
-                              {/* Play Button - Always visible on mobile, nicer on desktop */}
+                              {/* Play Button - Redesigned */}
                               <button 
                                 onClick={() => onSelectSong(song)} 
-                                className="w-10 h-10 md:w-auto md:h-auto md:px-5 md:py-2.5 rounded-full md:rounded-xl text-black font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg md:shadow-none md:hover:shadow-lg"
+                                className="w-10 h-10 md:w-auto md:h-auto md:px-5 md:py-2.5 rounded-full md:rounded-xl text-black font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg md:shadow-none md:hover:shadow-lg hover:brightness-110"
                                 style={{ backgroundColor: primaryColor }}
                               >
                                   <Play className="w-5 h-5 md:w-4 md:h-4 fill-current ml-0.5 md:ml-0" />
-                                  <span className="hidden md:inline">开始</span>
+                                  <span className="hidden md:inline uppercase tracking-wider text-sm">Play</span>
                               </button>
                               
-                              {/* Mobile Info trigger */}
+                              {/* Mobile Info Trigger */}
                               <button 
                                 onClick={() => setShowDetailsId(song.id)} 
                                 className="md:hidden p-2 text-gray-500 active:text-white"
                               >
-                                  <Info className="w-5 h-5" />
+                                  <Info className="w-6 h-6" />
+                              </button>
+                              
+                              {/* Desktop Info Trigger (Styled) */}
+                              <button 
+                                onClick={() => setShowDetailsId(song.id)} 
+                                className="hidden md:flex p-2 text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                              >
+                                  <Info className="w-4 h-4" />
                               </button>
                           </div>
                       )}
