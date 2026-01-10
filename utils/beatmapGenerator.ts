@@ -9,7 +9,7 @@ const DIFFICULTY_CONFIG = {
         jumpChance: 0.0
     },
     [BeatmapDifficulty.Normal]: {
-        thresholdMultiplier: 1.25, // Slightly denser to hit Lv 5-6
+        thresholdMultiplier: 1.25, 
         minGap: 0.22,
         streamChance: 0.0,
         holdChance: 0.15,
@@ -31,17 +31,19 @@ const DIFFICULTY_CONFIG = {
     },
     [BeatmapDifficulty.Titan]: {
         thresholdMultiplier: 0.75, 
-        minGap: 0.11, // Increased from 0.09 to 0.11 (Max ~9 NPS stream) to reduce clutter
+        minGap: 0.11,
         streamChance: 0.6,
         holdChance: 0.2, 
-        jumpChance: 0.45 // Slightly reduced chords
+        jumpChance: 0.45 
     }
 };
 
-/**
- * 核心逻辑：生成模式 (Patterning)
- * 避免完全随机，根据上下文生成符合手感的键位
- */
+export interface BeatmapFeatures {
+    jumps: boolean;
+    holds: boolean;
+    catch: boolean;
+}
+
 const getNextLanes = (
     count: number, 
     lastLanes: number[], 
@@ -51,13 +53,9 @@ const getNextLanes = (
     const lanes: number[] = [];
     const allLanes = Array.from({length: laneCount}, (_, i) => i);
     
-    // 1. 单点逻辑
     if (count === 1) {
         const last = lastLanes[0];
-        
         if (style === 'stream') {
-            // 交互：尽可能不在同一只手/同一位置连续点击
-            // 简单算法：左右交替或阶梯
             const candidates = allLanes.filter(l => Math.abs(l - last) >= 1 && Math.abs(l - last) <= 2);
             if (candidates.length > 0) {
                 lanes.push(candidates[Math.floor(Math.random() * candidates.length)]);
@@ -65,7 +63,6 @@ const getNextLanes = (
                 lanes.push((last + 1) % laneCount);
             }
         } else {
-            // 随机，但尽量不重复
             const candidates = allLanes.filter(l => !lastLanes.includes(l));
             if (candidates.length > 0) {
                 lanes.push(candidates[Math.floor(Math.random() * candidates.length)]);
@@ -74,23 +71,14 @@ const getNextLanes = (
             }
         }
     } 
-    // 2. 双押或多押逻辑
     else {
-        // 如果是多押 (3+)，尽量分散
         const needed = count;
-        
-        // 简单的随机填充逻辑，但避免完全重复上一组
         const candidates = allLanes.filter(l => !lastLanes.includes(l));
-        
-        // 如果候选不够（例如需要3个，但上次用了4个），就重置为全部
         const pool = candidates.length >= needed ? candidates : allLanes;
-        
-        // Shuffle pool
         for (let i = pool.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [pool[i], pool[j]] = [pool[j], pool[i]];
         }
-        
         lanes.push(...pool.slice(0, needed));
     }
     
@@ -103,26 +91,21 @@ export const generateBeatmap = (
     structure: SongStructure, 
     difficulty: BeatmapDifficulty = BeatmapDifficulty.Normal,
     laneCount: LaneCount = 4,
-    playStyle: PlayStyle = 'THUMB'
+    playStyle: PlayStyle = 'THUMB',
+    features: BeatmapFeatures = { jumps: true, holds: true, catch: true }
 ): Note[] => {
     let notes: Note[] = [];
-    
-    // Force 6K for Titan
     const effectiveLaneCount = difficulty === BeatmapDifficulty.Titan ? 6 : laneCount;
     const effectivePlayStyle = difficulty === BeatmapDifficulty.Titan ? 'MULTI' : playStyle;
 
-    // 1. 按时间排序 (不进行量子化，保持 DSP 原始精度)
     let sortedOnsets = onsets.sort((a, b) => a.time - b.time);
     const config = DIFFICULTY_CONFIG[difficulty];
 
-    // 生成逻辑
-    notes = runGenerationPass(sortedOnsets, structure, config, effectiveLaneCount, effectivePlayStyle, difficulty);
+    notes = runGenerationPass(sortedOnsets, structure, config, effectiveLaneCount, effectivePlayStyle, difficulty, features);
 
-    // 保底机制
     if (notes.length < 30 && difficulty !== BeatmapDifficulty.Easy) {
-        console.warn("Notes too sparse, retrying with lower threshold...");
         const retryConfig = { ...config, thresholdMultiplier: config.thresholdMultiplier * 0.7 };
-        notes = runGenerationPass(sortedOnsets, structure, retryConfig, effectiveLaneCount, effectivePlayStyle, difficulty);
+        notes = runGenerationPass(sortedOnsets, structure, retryConfig, effectiveLaneCount, effectivePlayStyle, difficulty, features);
     }
     
     if (notes.length === 0 && sortedOnsets.length > 0) {
@@ -138,11 +121,14 @@ const runGenerationPass = (
     config: any,
     laneCount: LaneCount,
     playStyle: PlayStyle,
-    difficulty: BeatmapDifficulty
+    difficulty: BeatmapDifficulty,
+    features: BeatmapFeatures
 ): Note[] => {
     const notes: Note[] = [];
     let lastLanes: number[] = [Math.floor(laneCount / 2)];
     let lastTime = -10;
+    
+    let lastNoteWasCatch = false;
 
     onsets.forEach(onset => {
         const currentSection = structure.sections.find(
@@ -153,57 +139,87 @@ const runGenerationPass = (
         let dynamicThreshold = baseThreshold * config.thresholdMultiplier;
 
         if (currentSection.style === 'simple') dynamicThreshold *= 1.3;
-        if (onset.energy < dynamicThreshold) return;
-        if (onset.time - lastTime < config.minGap) return;
+        
+        // Catch Chain Logic: Allow extremely small gaps for catch streams (1/16th)
+        const minGap = lastNoteWasCatch ? config.minGap * 0.5 : config.minGap;
 
-        // Determine number of simultaneous notes
+        if (onset.energy < dynamicThreshold) return;
+        if (onset.time - lastTime < minGap) return;
+
         let simNotes = 1;
         const isTitan = difficulty === BeatmapDifficulty.Titan;
-
-        const allowJump = (currentSection.style === 'jump' || Math.random() < config.jumpChance) && currentSection.intensity > 0.6;
         
-        if (allowJump && onset.energy > 0.75) {
-            simNotes = 2;
+        // JUMP LOGIC: Controlled by features.jumps
+        if (features.jumps) {
+            const allowJump = (currentSection.style === 'jump' || Math.random() < config.jumpChance) && currentSection.intensity > 0.6;
             
-            // Titan / Expert logic for Triples/Quads
-            if ((isTitan || (playStyle === 'MULTI' && laneCount === 6)) && onset.energy > 0.92) {
-                 // Nerfed chance for Triples/Quads
-                 if (isTitan && Math.random() > 0.65) {
-                     simNotes = 3; 
-                     // Rare Quads
-                     if (onset.energy > 0.99) simNotes = 4; 
-                 } else if (config.jumpChance > 0.35) {
-                     simNotes = 3;
-                 }
+            if (allowJump && onset.energy > 0.75) {
+                simNotes = 2;
+                if ((isTitan || (playStyle === 'MULTI' && laneCount === 6)) && onset.energy > 0.92) {
+                     if (isTitan && Math.random() > 0.65) {
+                         simNotes = 3; 
+                         if (onset.energy > 0.99) simNotes = 4; 
+                     } else if (config.jumpChance > 0.35) {
+                         simNotes = 3;
+                     }
+                }
             }
-        }
-        
-        if (playStyle === 'THUMB' && !isTitan) {
-            simNotes = Math.min(simNotes, 2);
+            
+            if (playStyle === 'THUMB' && !isTitan) {
+                simNotes = Math.min(simNotes, 2);
+            }
+        } else {
+            simNotes = 1;
         }
 
-        // Generate Lanes with Logic
         const lanes = getNextLanes(simNotes, lastLanes, laneCount, currentSection.style as any);
 
-        // Hold Logic
+        // HOLD LOGIC: Controlled by features.holds
         let isHold = false;
         let duration = 0;
-        if (currentSection.style === 'hold' && Math.random() < config.holdChance && simNotes === 1) {
-            isHold = true;
-            const maxHold = config.minGap > 0.2 ? 0.5 : 1.0;
-            duration = Math.min(maxHold, Math.max(0.1, 60 / structure.bpm)); 
-        }
-
-        // Catch Note Logic
-        let isCatch = false;
-        if (!isHold && simNotes === 1) {
-            const catchChance = currentSection.style === 'stream' ? 0.2 : 0.05;
-            if (Math.random() < catchChance) {
-                isCatch = true;
+        if (features.holds) {
+            if (currentSection.style === 'hold' && Math.random() < config.holdChance && simNotes === 1) {
+                isHold = true;
+                const maxHold = config.minGap > 0.2 ? 0.5 : 1.0;
+                duration = Math.min(maxHold, Math.max(0.1, 60 / structure.bpm)); 
             }
         }
 
-        lanes.forEach(lane => {
+        // CATCH LOGIC: Controlled by features.catch
+        // Check if environment is suitable for Catch
+        const canCatch = features.catch && !isHold && (currentSection.style === 'stream' || onset.energy > 0.8 || lastNoteWasCatch);
+        
+        lanes.forEach((lane, index) => {
+            let type: 'NORMAL' | 'CATCH' = 'NORMAL';
+
+            if (canCatch) {
+                let catchProb = 0.1;
+
+                // 1. High Energy / Kiai Section
+                if (currentSection.style === 'stream' && currentSection.intensity > 0.7) catchProb = 0.3;
+                
+                // 2. Chain Logic (If previous was catch, boost prob to create slider feel)
+                if (lastNoteWasCatch) {
+                    if (onset.time - lastTime < 0.2) {
+                         catchProb = 0.85; // High chance to continue chain
+                    } else {
+                         catchProb = 0.2; // Break chain if slow
+                    }
+                }
+
+                // 3. Mixed Chords (Titan/Expert): Allow one note in a chord to be catch
+                if (simNotes > 1 && isTitan) {
+                     // Only make one of them catch usually
+                     if (index === 0 && Math.random() < 0.4) {
+                         type = 'CATCH';
+                     }
+                } else if (simNotes === 1) {
+                    if (Math.random() < catchProb) {
+                        type = 'CATCH';
+                    }
+                }
+            }
+
             notes.push({
                 id: `note-${onset.time}-${lane}`,
                 time: onset.time,
@@ -212,12 +228,16 @@ const runGenerationPass = (
                 visible: true,
                 duration: isHold ? duration : 0,
                 isHolding: false,
-                type: isCatch ? 'CATCH' : 'NORMAL'
+                type: type
             });
         });
 
+        // Determine if this set contained a catch note for next iteration context
+        const hasCatch = notes.slice(-lanes.length).some(n => n.type === 'CATCH');
+
         lastLanes = lanes;
         lastTime = onset.time + (isHold ? duration : 0);
+        lastNoteWasCatch = hasCatch; 
     });
 
     return notes;
@@ -238,25 +258,15 @@ const generateRawFallback = (onsets: Onset[], laneCount: number): Note[] => {
         }));
 };
 
-/**
- * 计算谱面的加权难度系数 (用于 UI 显示 1-15+ 级)
- * 重新平衡算法：防止高密度下的数值膨胀
- * 修改：12-20级曲线不再线性，而是更加陡峭 (数值增长变慢)，20级以上为Ω
- */
 export const calculateDifficultyRating = (notes: Note[], duration: number): number => {
     if (notes.length === 0 || duration === 0) return 0;
-
-    // 1. Average NPS
     const avgNps = notes.length / duration;
-
-    // 2. Peak Density (Notes in 1s window)
     let maxWindowNotes = 0;
     const sortedNotes = notes.sort((a, b) => a.time - b.time);
     
     if (sortedNotes.length > 0) {
         let left = 0;
         for (let right = 0; right < sortedNotes.length; right++) {
-            // Sliding window of 1.0 second
             while (sortedNotes[right].time - sortedNotes[left].time > 1.0) {
                 left++;
             }
@@ -267,22 +277,12 @@ export const calculateDifficultyRating = (notes: Note[], duration: number): numb
         }
     }
     const peakNps = maxWindowNotes; 
-
     const weightedAvg = avgNps * 1.5; 
     const weightedPeak = peakNps * 0.1;
-
     let rawScore = weightedAvg + weightedPeak;
     
-    // Non-linear scaling for high difficulty (>12)
-    // Makes the rating grow SLOWER as density increases, meaning the "Difficulty Curve" feels steeper.
-    // To reach Level 20 (Omega), you need a much higher density than linear scaling would suggest.
     if (rawScore > 12) {
         const excess = rawScore - 12;
-        // Use a power function < 1 to compress high values
-        // Raw 12 -> 12
-        // Raw 20 (Excess 8) -> 12 + 8^0.75 (~4.7) = 16.7
-        // Raw 30 (Excess 18) -> 12 + 18^0.75 (~8.7) = 20.7 (Omega)
-        // Raw 50 (Excess 38) -> 12 + 38^0.75 (~15.3) = 27.3
         rawScore = 12 + Math.pow(excess, 0.75); 
     }
     

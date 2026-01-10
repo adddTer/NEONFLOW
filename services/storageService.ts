@@ -1,6 +1,7 @@
 import { SavedSong } from '../types';
 import JSZip from 'jszip';
 import { calculateDifficultyRating } from '../utils/beatmapGenerator';
+import { extractCoverArt } from '../utils/audioMetadata';
 
 const DB_NAME = 'NeonFlowDB';
 const STORE_NAME = 'songs';
@@ -49,7 +50,6 @@ export const getAllSongs = async (): Promise<SavedSong[]> => {
     const transaction = db.transaction(STORE_NAME, 'readonly');
     const store = transaction.objectStore(STORE_NAME);
     const songs: SavedSong[] = [];
-    // Use cursor for better memory management and control
     const request = store.openCursor();
     
     request.onsuccess = (event) => {
@@ -57,14 +57,12 @@ export const getAllSongs = async (): Promise<SavedSong[]> => {
         if (cursor) {
             const song = cursor.value as SavedSong;
             
-            // Migration / Type fixes
              if (song.notes) {
                  song.notes.forEach(note => {
                      if (!note.type) note.type = 'NORMAL';
                  });
              }
              
-             // Recalculate rating if needed (fix broken old ratings)
              if (song.notes && song.notes.length > 0 && song.duration > 0) {
                  const newRating = calculateDifficultyRating(song.notes, song.duration);
                  if (song.difficultyRating > 20 || Math.abs(song.difficultyRating - newRating) > 1.0) {
@@ -72,9 +70,7 @@ export const getAllSongs = async (): Promise<SavedSong[]> => {
                  }
              }
 
-            // OPTIMIZATION: Create lightweight version without heavy audioData for the list
-            // This significantly reduces memory usage and load time for the library screen
-            // We pass a 0-byte buffer to satisfy the type definition while saving memory
+            // OPTIMIZATION: Create lightweight version
             const lightSong = { ...song, audioData: new ArrayBuffer(0) };
             songs.push(lightSong);
             
@@ -119,16 +115,7 @@ export const updateSongMetadata = async (id: string, title: string, artist: stri
     });
 };
 
-/**
- * Export song as a ZIP file containing:
- * 1. map.json (metadata + notes, NO audio)
- * 2. audio.bin (raw audio arraybuffer)
- * 
- * @param song The song to export
- * @param includeHistory Whether to include the 'bestResult' field in the export
- */
 export const exportSongAsZip = async (song: SavedSong, includeHistory: boolean = true) => {
-    // If song is lightweight (from list), fetch full data first
     let fullSong = song;
     if (song.audioData.byteLength === 0) {
         const fetched = await getSongById(song.id);
@@ -138,8 +125,6 @@ export const exportSongAsZip = async (song: SavedSong, includeHistory: boolean =
 
     const zip = new JSZip();
     
-    // 1. Create JSON part (exclude heavy audioData)
-    // If includeHistory is false, we strip the bestResult
     const { audioData, bestResult, ...metaData } = fullSong;
     
     const exportData = {
@@ -152,29 +137,21 @@ export const exportSongAsZip = async (song: SavedSong, includeHistory: boolean =
     const jsonContent = JSON.stringify(exportData);
     
     zip.file("map.json", jsonContent);
-    // OPTIMIZATION: Use STORE for audio to avoid re-compressing already compressed audio
-    // This makes the export process significantly faster
     zip.file("audio.bin", fullSong.audioData, { compression: "STORE" });
 
-    // 2. Generate ZIP
     const blob = await zip.generateAsync({type: "blob"});
     
-    // 3. Trigger Download
     const url = URL.createObjectURL(blob);
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", url);
-    downloadAnchorNode.setAttribute("download", `${fullSong.title}.nfz`); // NeonFlow Zip
+    downloadAnchorNode.setAttribute("download", `${fullSong.title}.nfz`); 
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
     URL.revokeObjectURL(url);
 };
 
-/**
- * Import song from ZIP or Legacy JSON
- */
 export const parseSongImport = async (file: File): Promise<SavedSong> => {
-    // Check extension or try to read as ZIP first
     if (file.name.endsWith('.json')) {
         return parseLegacyJsonImport(file);
     }
@@ -196,7 +173,6 @@ export const parseSongImport = async (file: File): Promise<SavedSong> => {
             throw new Error("缺少谱面签名");
         }
         
-        // Ensure type exists
         if (metaData.notes) {
             metaData.notes.forEach((n: any) => {
                 if (!n.type) n.type = 'NORMAL';
@@ -205,7 +181,6 @@ export const parseSongImport = async (file: File): Promise<SavedSong> => {
 
         const audioArrayBuffer = await audioFile.async("arraybuffer");
 
-        // Use current calculation to ensure imported songs are also rated correctly
         let rating = metaData.difficultyRating;
         if (metaData.notes && metaData.duration) {
              rating = calculateDifficultyRating(metaData.notes, metaData.duration);
@@ -238,7 +213,6 @@ const parseLegacyJsonImport = (file: File): Promise<SavedSong> => {
                 if (!resultStr.trim().startsWith('{')) throw new Error("Invalid JSON");
                 const json = JSON.parse(resultStr);
                 
-                // Helper to decode base64 if needed (legacy format stored audio as base64 string in json)
                 const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
                     const binary_string = window.atob(base64);
                     const len = binary_string.length;
@@ -251,14 +225,12 @@ const parseLegacyJsonImport = (file: File): Promise<SavedSong> => {
 
                 const audioBuffer = base64ToArrayBuffer(json.audioData);
                 
-                // Compatibility check for 'type'
                 if (json.notes) {
                     json.notes.forEach((n: any) => {
                         if (!n.type) n.type = 'NORMAL';
                     });
                 }
                 
-                // Recalc rating
                 const rating = calculateDifficultyRating(json.notes || [], json.duration || 1);
 
                 const song: SavedSong = {

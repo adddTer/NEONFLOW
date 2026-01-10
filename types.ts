@@ -28,6 +28,7 @@ export interface Note {
   duration: number; // 持续时间，0 表示单点，>0 表示长条
   isHolding: boolean; // 是否正在被按住
   type: NoteType; // 新增：音符类型
+  missed?: boolean; // 新增：是否已判定为 Miss (用于视觉变灰)
 }
 
 // DSP 层输出：原始节奏点
@@ -66,6 +67,7 @@ export interface SavedSong {
   title: string;
   artist: string;
   album?: string; // AI 推断的专辑
+  coverArt?: string; // Base64 image string (Parsed from file)
   createdAt: number;
   duration: number;
   audioData: ArrayBuffer; // 存储音频原文件
@@ -83,11 +85,12 @@ export interface GameConfig {
 }
 
 export enum GameStatus {
-  Library = 'LIBRARY', // Replaces Idle
+  Library = 'LIBRARY', 
   Analyzing = 'ANALYZING',
-  Ready = 'READY', // Ready to play a specific song
+  Ready = 'READY', 
   Countdown = 'COUNTDOWN',
   Playing = 'PLAYING',
+  Paused = 'PAUSED', // NEW
   Finished = 'FINISHED',
 }
 
